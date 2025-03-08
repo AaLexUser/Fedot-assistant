@@ -1,0 +1,4 @@
+AutogluonModels/
+competitions/
+__pycache__
+test*

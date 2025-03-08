@@ -2,20 +2,74 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Union
 from pathlib import Path
+import pandas as pd
 
 import typer
 from omegaconf import OmegaConf
 from rich import print as rprint
 
-from .constants import DEFAULT_QUALITY, PRESETS
+from .constants import (
+    DEFAULT_QUALITY,
+    PRESETS,
+    NO_ID_COLUMN_IDENTIFIED
+)
 from .utils import load_config
 from .task import TabularPredictionTask
 from .assistant import TabularPredictionAssistant
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.ERROR)
+
+def make_prediction_outputs(
+    task: TabularPredictionTask,
+    predictions: Union[pd.DataFrame, pd.Series]
+) -> pd.DataFrame:
+    if isinstance(predictions, pd.Series):
+        outputs = predictions.to_frame()
+    else:
+        outputs = predictions.copy()
+    
+    # Ensure we only keep required output columns from predictions
+    common_cols = [col for col in task.output_columns if col in outputs.columns]
+    outputs = outputs[common_cols]
+    
+    # Handle specific test ID column if providded and detected
+    if task.test_id_column is not None and task.test_id_column != NO_ID_COLUMN_IDENTIFIED:
+        test_ids = task.test_data[task.test_id_column]
+        output_ids = task.sample_submission_data[task.output_id_column]
+        
+        if not test_ids.equals(output_ids):
+            print("Warming: Test IDs and output IDs do not match!")
+            
+        # Ensure test ID column is included
+        if task.test_id_column not in outputs.columns:
+            outputs = pd.concat([task.test_data[task.test_id_column], outputs], axis="columns")
+    
+    # Handle undetected ID columns
+    missing_columns = [col for col in task.output_columns if col not in outputs.columns]
+    if missing_columns:
+        print(
+            "Warming: The following columns are not in predictions and will be treated as ID columns:"
+            f"{missing_columns}"
+        )
+        
+        for col in missing_columns:
+            if col in task.test_data.columns:
+                # Copy from test data if available
+                outputs[col] = task.test_data[col]
+                print(f"Warming: Copied from test data for column '{col}'")
+            else:
+                # Generate unique integer values
+                outputs[col] = range(len(outputs))
+                print(f"Warming: Generated unique integer values for column '{col}'"
+                      "as it was not found in test data")
+    
+    # Ensure columns are in the correct order
+    outputs = outputs[task.output_columns]
+    
+    return outputs
 
 
 @dataclass
@@ -108,6 +162,27 @@ def run_assistant(
         
     with time_block("preprocessing task", timer):
         task = assistant.preprocess_task(task)
+    
+    with time_block("training model", timer):
+        rprint("Model training starts...")
+        
+        assistant.fit_predictor(task, time_limit=timer.time_remaining)
+        
+        rprint("[green]Model training complete![/green]")
+    
+    with time_block("making predictions", timer):
+        rprint("Prediction starts...")
+        
+        predictions = assistant.predict(task)
+        
+        if not output_filename:
+            output_filename = f"fedotllm-{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(output_filename, "w") as fp:
+            make_prediction_outputs(task, predictions).to_csv(fp, index=False)
+        
+        rprint(f"[green] Prediction complete! Outputs written to {output_filename}[/green]")
+    
+    return output_filename
         
         
 

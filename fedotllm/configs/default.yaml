@@ -1,0 +1,22 @@
+infer_eval_metric: True
+detect_and_drop_id_column: False
+task_preprocessors_timeout: 3600
+time_limit: 14400
+save_artifacts:
+  enabled: False
+  append_timestamp: True
+  path: "./artifacts"
+feature_transformers:
+  enabled_models: []
+autogluon:
+  predictor_init_kwargs: {}
+  predictor_fit_kwargs:
+    presets: best_quality
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  base_url: https://models.inference.ai.azure.com
+  api_key: ${env:OPENAI_API_KEY}
+  max_tokens: 512
+  temperature: 0
+  verbose: True

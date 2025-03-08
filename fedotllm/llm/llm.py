@@ -1,9 +1,10 @@
 import os
 import logging
 import openai
-from typing import List, Dict
+from typing import List, Dict, Any
 from omegaconf import DictConfig
 import pprint
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class AssistantChatOpenAI:
         self.output_ = 0
 
         self.model = config.model
+        self.base_url = config.base_url
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens
 
@@ -29,9 +31,19 @@ class AssistantChatOpenAI:
 
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url=config.base_url,
+            base_url=self.base_url,
         )
+    
+    def describe(self) -> Dict[str, Any]:
+        return {
+            "model": self.model,
+            "base_url": self.base_url,
+            "history": self.history_,
+            "input": self.input_,
+            "output": self.output_
+        }
 
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
     def invoke(self, messages: List[Dict[str, str]]):
         response = self.client.chat.completions.create(
             messages=messages,

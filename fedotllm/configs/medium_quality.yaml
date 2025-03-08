@@ -1,0 +1,4 @@
+time_limit: 600
+autogluon:
+  predictor_fit_kwargs:
+    presets: medium_quality

@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from autogluon.tabular import TabularDataset
-from .constants import OUTPUT, TEST, TRAIN
+from .constants import (
+    OUTPUT,
+    TEST,
+    TRAIN,
+    REGRESSION,
+    BINARY,
+    PREFERED_METRIC_BY_PROBLEM_TYPE
+)
 
 
 class TabularPredictionTask:
@@ -63,3 +70,222 @@ class TabularPredictionTask:
                 name=task_root_dir.name,
             ),
         )
+
+    def load_task_data(self, dataset_key: Union[str, str]) -> TabularDataset:
+        """Load the competition file for the task."""
+        if dataset_key not in self.dataset_mapping:
+            raise ValueError(
+                f"Dataset type {dataset_key} not found for task {self.name}"
+            )
+
+        dataset = self.dataset_mapping[dataset_key]
+        if dataset is None:
+            return None
+        if isinstance(dataset, pd.DataFrame):
+            return TabularDataset(dataset)
+        elif isinstance(dataset, TabularDataset):
+            return dataset
+        else:
+            if isinstance(dataset, Path):
+                filepath = dataset
+            else:
+                filepath = Path(dataset)
+
+            if filepath.suffix in [".xlsx", ".xls"]:
+                df = pd.read_excel(filepath, engine="calamine")
+                return TabularDataset(df)
+            elif filepath.suffix == ".json":
+                raise TypeError(f"File {filepath.name} has unsupported type: json")
+            else:
+                return TabularDataset(str(filepath))
+
+    def _set_task_files(
+        self,
+        dataset_name_mapping: Dict[str, Union[str, Path, pd.DataFrame, TabularDataset]],
+    ):
+        """Set the task files for the task."""
+        for k, v in dataset_name_mapping.items():
+            if v is None:
+                self.dataset_mapping[k] = None
+            elif isinstance(v, (pd.DataFrame, TabularDataset)):
+                self.dataset_mapping[k] = v
+            elif isinstance(v, Path):
+                if v.suffix in [".xlsx", ".xls"]:
+                    self.dataset_mapping[k] = (
+                        pd.read_excel(v, engine="calamine") if self.cache_data else v
+                    )
+                else:
+                    self.dataset_mapping[k] = (
+                        TabularDataset(str(v)) if self.cache_data else v
+                    )
+            elif isinstance(v, str):
+                filepath = next(
+                    iter([path for path in self.filepaths if path.name == v]),
+                    self.filepaths[0].parent / v,
+                )
+                if not filepath.is_file():
+                    raise ValueError(
+                        f"File {v} not found in task {self.metadata['name']}"
+                    )
+                if filepath.suffix in [".xlsx", ".xls"]:
+                    self.dataset_mapping[k] = (
+                        pd.read_excel(filepath, engine="calamine")
+                        if self.cache_data
+                        else filepath
+                    )
+                else:
+                    self.dataset_mapping[k] = (
+                        TabularDataset(str(filepath)) if self.cache_data else filepath
+                    )
+            else:
+                raise TypeError(f"Unsupported type for dataset_mapping: {type(v)}")
+
+    @property
+    def train_data(self) -> TabularDataset:
+        return self.load_task_data(TRAIN)
+
+    @train_data.setter
+    def train_data(self, data: Union[str, Path, pd.DataFrame, TabularDataset]) -> None:
+        self._set_task_files({TRAIN: data})
+
+    @property
+    def test_data(self) -> TabularDataset:
+        return self.load_task_data(TEST)
+
+    @test_data.setter
+    def test_data(self, data: Union[str, Path, pd.DataFrame, TabularDataset]) -> None:
+        self._set_task_files({TEST: data})
+
+    @property
+    def sample_submission_data(self) -> TabularDataset:
+        return self.load_task_data(OUTPUT)
+
+    @sample_submission_data.setter
+    def sample_submission_data(
+        self, data: Union[str, Path, pd.DataFrame, TabularDataset]
+    ) -> None:
+        if self.sample_submission_data is not None:
+            raise ValueError("Output data already set for task")
+        self._set_task_files({OUTPUT: data})
+    
+    @property
+    def output_columns(self) -> List[str]:
+        if self.sample_submission_data is None:
+            if self.label_column:
+                return [self.label_column]
+            else:
+                return None
+        else:
+            return self.sample_submission_data.columns.to_list()
+
+    @property
+    def label_column(self) -> Optional[str]:
+        """Return the label column for the task."""
+        if "label_column" in self.metadata and self.metadata["label_column"]:
+            return self.metadata["label_column"]
+        else:
+            # should ideally never be called after LabelColumnInferenceTransform has run
+            return self._infer_label_column_from_sample_submission_data()
+
+    @label_column.setter
+    def label_column(self, label_column: str) -> None:
+        self.metadata["label_column"] = label_column
+        
+    @property
+    def columns_in_train_but_not_test(self) -> List[str]:
+        return list(set(self.train_data.columns) - set(self.test_data.columns))
+    
+    @property
+    def data_description(self) -> str:
+        return self.metadata.get("data_description", self.description)
+    
+    @property
+    def evaluation_description(self) -> str:
+        return self.metadata.get("evaluation_description", self.description)
+    
+    @property
+    def test_id_column(self) -> Optional[str]:
+        return self.metadata.get("test_id_column", None)
+    
+    @test_id_column.setter
+    def test_id_column(self, test_id_column: str) -> None:
+        self.metadata["test_id_column"] = test_id_column
+        
+    @property
+    def train_id_column(self) -> Optional[str]:
+        return self.metadata.get("train_id_column", None)
+    
+    @train_id_column.setter
+    def train_id_column(self, train_id_column: str) -> None:
+        self.metadata["train_id_column"] = train_id_column
+        
+    @property
+    def output_id_column(self) -> Optional[str]:
+        return self.metadata.get(
+            "output_id_column",
+            self.sample_submission_data.columns[0] if self.sample_submission_data is not None else None
+        )
+    
+    @output_id_column.setter
+    def output_id_column(self, output_id_column: str) -> None:
+        self.metadata["output_id_column"] = output_id_column
+        
+    @property
+    def problem_type(self) -> Optional[str]:
+        return self.metadata["problem_type"] or self._find_problem_type_in_description()
+    
+    @problem_type.setter
+    def problem_type(self, problem_type: str) -> None:
+        self.metadata["problem_type"] = problem_type
+        
+    @property
+    def eval_metric(self) -> Optional[str]:
+        return self.metadata["eval_metric"] or (
+            PREFERED_METRIC_BY_PROBLEM_TYPE[self.problem_type] if self.problem_type else None
+        )
+        
+    @eval_metric.setter
+    def eval_metric(self, eval_metric: str) -> None:
+        self.metadata["eval_metric"] = eval_metric
+        
+        
+    def _infer_label_column_from_sample_submission_data(self) -> Optional[str]:
+        if self.output_columns is None:
+            return None
+
+        # Assume the first output column is the ID column and ignore it
+        relevant_output_cols = self.output_columns[1:]
+
+        # Check if any of the output columns exists in the train data
+        existing_output_cols = [
+            col for col in relevant_output_cols if col in self.train_data.columns
+        ]
+
+        # Case 1: If there's only one output column in the train data, use it
+        if len(existing_output_cols) == 1:
+            return existing_output_cols[0]
+
+        # Case 2: For example in some multiclass problems, look for a column
+        #         whose unique values match or contain the output columns
+        output_set = set(col.lower() for col in relevant_output_cols)
+        for col in self.train_data.columns:
+            unique_values = set(
+                str(val).lower()
+                for val in self.train_data[col].unique()
+                if pd.notna(val)
+            )
+            if output_set == unique_values or output_set.issubset(unique_values):
+                return col
+
+        # If no suitable column is found, raise an exception
+        raise ValueError(
+            "Unable to infer the label column. Please specify it manually."
+        )
+
+    def _find_problem_type_in_description(self) -> Optional[str]:
+        if "regression" in self.description.lower():
+            return REGRESSION
+        elif "classification" in self.description.lower():
+            return BINARY
+        else:
+            return None
