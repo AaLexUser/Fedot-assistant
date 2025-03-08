@@ -1,9 +1,8 @@
-import difflib
 from typing import List, Dict, Optional, Union, Iterable, Any
 from ..task import TabularPredictionTask
 from ..exceptions import OutputParserException
 import logging
-from autogluon.core.utils.utils import infer_problem_type, infer_eval_metric
+from autogluon.core.utils.utils import infer_problem_type
 from ..llm import AssistantChatOpenAI
 from ..prompting import (
     PromptGenerator,

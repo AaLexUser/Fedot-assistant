@@ -8,6 +8,14 @@ save_artifacts:
   path: "./artifacts"
 feature_transformers:
   enabled_models: []
+  models:
+    CAAFE:
+      _target_: fedotllm.transformer.feature_transformers.caafe.CAAFETransformer
+      eval_model: lightgdm
+      llm_provider: ${llm.provider}
+      llm_model: ${llm.model}
+      num_iterations: 5
+      optimization_metric: roc
 autogluon:
   predictor_init_kwargs: {}
   predictor_fit_kwargs:

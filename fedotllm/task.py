@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from autogluon.tabular import TabularDataset
+import pandas as pd
 from .constants import (
     OUTPUT,
     TEST,
@@ -71,7 +72,7 @@ class TabularPredictionTask:
             ),
         )
 
-    def load_task_data(self, dataset_key: Union[str, str]) -> TabularDataset:
+    def load_task_data(self, dataset_key: Union[str, str]) -> pd.DataFrame:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:
             raise ValueError(
@@ -141,7 +142,7 @@ class TabularPredictionTask:
                 raise TypeError(f"Unsupported type for dataset_mapping: {type(v)}")
 
     @property
-    def train_data(self) -> TabularDataset:
+    def train_data(self) -> pd.DataFrame:
         return self.load_task_data(TRAIN)
 
     @train_data.setter
@@ -149,7 +150,7 @@ class TabularPredictionTask:
         self._set_task_files({TRAIN: data})
 
     @property
-    def test_data(self) -> TabularDataset:
+    def test_data(self) -> pd.DataFrame:
         return self.load_task_data(TEST)
 
     @test_data.setter
@@ -157,7 +158,7 @@ class TabularPredictionTask:
         self._set_task_files({TEST: data})
 
     @property
-    def sample_submission_data(self) -> TabularDataset:
+    def sample_submission_data(self) -> pd.DataFrame:
         return self.load_task_data(OUTPUT)
 
     @sample_submission_data.setter
