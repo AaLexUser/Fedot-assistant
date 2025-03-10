@@ -5,7 +5,8 @@ from ..utils import is_text_file
 from ..constants import (NO_FILE_IDENTIFIED,
                           PROBLEM_TYPES,
                           NO_ID_COLUMN_IDENTIFIED,
-                          METRICS_DESCRIPTION)
+                          METRICS_DESCRIPTION,
+                          TASK_TYPES)
 from .utils import get_outer_columns, parse_and_check_json
 from functools import partial
 
@@ -60,6 +61,21 @@ class PromptGenerator(ABC):
     
     def create_parser(self):
         return partial(parse_and_check_json, expected_keys=self.fields)
+    
+class TaskTypePromptGenerator(PromptGenerator):
+    fields = ["task_type"]
+    
+    def generate_prompt(self) -> str:
+        return "\n\n".join(
+            [
+                self.basic_intro_prompt,
+                self.data_description_prompt,
+                ("Based on the information provided, identify the correct task_type to be used "
+                 f"from among these KEYS: {', '.join(TASK_TYPES)}"),
+                self.get_field_parsing_prompt(),
+            ]
+        )
+        
     
 class DescriptionFileNamePromptGenerator(PromptGenerator):
     fields = ["data_description_file", "evaluation_description_file"]

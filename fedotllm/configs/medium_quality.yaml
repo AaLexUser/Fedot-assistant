@@ -1,4 +1,8 @@
 time_limit: 600
-autogluon:
-  predictor_fit_kwargs:
-    presets: medium_quality
+automl:
+  autogluon:
+    predictor_fit_kwargs:
+      presets: medium_quality
+  fedot:
+    predictor_init_kwargs:
+      preset: fast_train

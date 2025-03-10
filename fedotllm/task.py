@@ -1,22 +1,23 @@
 """A task encapsulates the data for a data science task or project. It contains descriptions, data, metadata."""
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
-from autogluon.tabular import TabularDataset
-import pandas as pd
+from fedotllm.tabular import TabularDataset, load_pd
 from .constants import (
     OUTPUT,
     TEST,
     TRAIN,
     REGRESSION,
     BINARY,
-    PREFERED_METRIC_BY_PROBLEM_TYPE
+    PREFERED_METRIC_BY_PROBLEM_TYPE,
+    TABULAR,
+    MULTIMODAL,
+    TIME_SERIES
 )
 
 
-class TabularPredictionTask:
+class PredictionTask:
     """A task contains data and metadata for a tabular machine learning task, including datasets, metadata such as
     problem type, test_id_column, etc.
     """
@@ -32,10 +33,12 @@ class TabularPredictionTask:
         self.metadata: Dict[str, Any] = {
             "name": name,
             "description": description,
+            "task_type": None,
             "label_column": None,
             "problem_type": None,
             "eval_metric": None,  # string, keying Autogluon Tabular metrics
             "test_id_column": None,
+            "images_column": None
         }
 
         self.metadata.update(metadata)
@@ -44,7 +47,7 @@ class TabularPredictionTask:
         self.cache_data = cache_data
 
         # TODO: each data split can have multiple files
-        self.dataset_mapping: Dict[str, Union[Path, pd.DataFrame, TabularDataset]] = {
+        self.dataset_mapping: Dict[str, Union[Path, TabularDataset]] = {
             TRAIN: None,
             TEST: None,
             OUTPUT: None,
@@ -56,14 +59,13 @@ class TabularPredictionTask:
     @classmethod
     def from_path(
         cls, task_root_dir: Path, name: Optional[str] = None
-    ) -> "TabularPredictionTask":
+    ) -> "PredictionTask":
         # Get all filenames under task_root_dir
         task_data_filenames = []
-        for root, _, files in os.walk(task_root_dir):
-            for file in files:
-                # Get the relative path
-                relative_path = os.path.relpath(os.path.join(root, file), task_root_dir)
-                task_data_filenames.append(relative_path)
+        for entry in task_root_dir.iterdir():
+            if entry.is_file():
+                # Get just the filename (no subdir paths)
+                task_data_filenames.append(entry.name)
 
         return cls(
             filepaths=[task_root_dir / fn for fn in task_data_filenames],
@@ -72,6 +74,11 @@ class TabularPredictionTask:
             ),
         )
 
+    @staticmethod
+    def save_artifacts(full_save_path, predictor):
+        predictor.save_artifacts(full_save_path)
+                
+                
     def load_task_data(self, dataset_key: Union[str, str]) -> pd.DataFrame:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:
@@ -83,7 +90,7 @@ class TabularPredictionTask:
         if dataset is None:
             return None
         if isinstance(dataset, pd.DataFrame):
-            return TabularDataset(dataset)
+            return load_pd(dataset)
         elif isinstance(dataset, TabularDataset):
             return dataset
         else:
@@ -91,34 +98,26 @@ class TabularPredictionTask:
                 filepath = dataset
             else:
                 filepath = Path(dataset)
-
-            if filepath.suffix in [".xlsx", ".xls"]:
-                df = pd.read_excel(filepath, engine="calamine")
-                return TabularDataset(df)
-            elif filepath.suffix == ".json":
+                
+            if filepath.suffix == ".json":
                 raise TypeError(f"File {filepath.name} has unsupported type: json")
             else:
-                return TabularDataset(str(filepath))
+                return load_pd(filepath)
 
     def _set_task_files(
         self,
-        dataset_name_mapping: Dict[str, Union[str, Path, pd.DataFrame, TabularDataset]],
+        dataset_name_mapping: Dict[str, Union[str, Path, TabularDataset]],
     ):
         """Set the task files for the task."""
         for k, v in dataset_name_mapping.items():
             if v is None:
                 self.dataset_mapping[k] = None
-            elif isinstance(v, (pd.DataFrame, TabularDataset)):
+            elif isinstance(v, TabularDataset):
                 self.dataset_mapping[k] = v
             elif isinstance(v, Path):
-                if v.suffix in [".xlsx", ".xls"]:
-                    self.dataset_mapping[k] = (
-                        pd.read_excel(v, engine="calamine") if self.cache_data else v
-                    )
-                else:
-                    self.dataset_mapping[k] = (
-                        TabularDataset(str(v)) if self.cache_data else v
-                    )
+                self.dataset_mapping[k] = (
+                    load_pd(v) if self.cache_data else v
+                )
             elif isinstance(v, str):
                 filepath = next(
                     iter([path for path in self.filepaths if path.name == v]),
@@ -128,42 +127,44 @@ class TabularPredictionTask:
                     raise ValueError(
                         f"File {v} not found in task {self.metadata['name']}"
                     )
-                if filepath.suffix in [".xlsx", ".xls"]:
-                    self.dataset_mapping[k] = (
-                        pd.read_excel(filepath, engine="calamine")
-                        if self.cache_data
-                        else filepath
-                    )
                 else:
                     self.dataset_mapping[k] = (
-                        TabularDataset(str(filepath)) if self.cache_data else filepath
+                        load_pd(filepath) if self.cache_data else filepath
                     )
             else:
                 raise TypeError(f"Unsupported type for dataset_mapping: {type(v)}")
+            
+    @property
+    def task_type(self) -> Optional[str]:
+        return self.metadata["task_type"] or self._find_task_type_in_description()
+    
+    @task_type.setter
+    def task_type(self, task_type: str) -> None:
+        self.metadata["task_type"] = task_type
 
     @property
-    def train_data(self) -> pd.DataFrame:
+    def train_data(self) -> TabularDataset:
         return self.load_task_data(TRAIN)
 
     @train_data.setter
-    def train_data(self, data: Union[str, Path, pd.DataFrame, TabularDataset]) -> None:
+    def train_data(self, data: Union[str, Path, TabularDataset]) -> None:
         self._set_task_files({TRAIN: data})
 
     @property
-    def test_data(self) -> pd.DataFrame:
+    def test_data(self) -> TabularDataset:
         return self.load_task_data(TEST)
 
     @test_data.setter
-    def test_data(self, data: Union[str, Path, pd.DataFrame, TabularDataset]) -> None:
+    def test_data(self, data: Union[str, Path, TabularDataset]) -> None:
         self._set_task_files({TEST: data})
 
     @property
-    def sample_submission_data(self) -> pd.DataFrame:
+    def sample_submission_data(self) -> TabularDataset:
         return self.load_task_data(OUTPUT)
 
     @sample_submission_data.setter
     def sample_submission_data(
-        self, data: Union[str, Path, pd.DataFrame, TabularDataset]
+        self, data: Union[str, Path, TabularDataset]
     ) -> None:
         if self.sample_submission_data is not None:
             raise ValueError("Output data already set for task")
@@ -249,6 +250,11 @@ class TabularPredictionTask:
     def eval_metric(self, eval_metric: str) -> None:
         self.metadata["eval_metric"] = eval_metric
         
+    @property
+    def images_column(self) -> Optional[str]:
+        return self.metadata["images_column"] or (
+            self._find_path_column_in_train() if self.train_data is not None else None)
+        
         
     def _infer_label_column_from_sample_submission_data(self) -> Optional[str]:
         if self.output_columns is None:
@@ -282,6 +288,32 @@ class TabularPredictionTask:
         raise ValueError(
             "Unable to infer the label column. Please specify it manually."
         )
+        
+    def _find_path_column_in_train(self) -> Optional[str]:
+        """Find column that contain paths"""
+        path_columns = []
+        for col in self.train_data.columns:
+            try: 
+                path = Path(str(self.train_data[col][0]))
+                if path.exists():
+                    path_columns.append(col)
+            except Exception:
+                continue
+        if len(path_columns) > 0:
+            return path_columns[0]
+        return None
+    
+      
+    def _find_task_type_in_description(self) -> Optional[str]:
+        desc = self.description.lower()
+        # Check in priority order
+        if any(kw in desc for kw in ["tabular"]):
+            return TABULAR
+        if any(kw in desc for kw in ["multimodal", "image"]):
+            return MULTIMODAL
+        if any(kw in desc for kw in ["timeseries", "time series"]):
+            return TIME_SERIES
+        return None
 
     def _find_problem_type_in_description(self) -> Optional[str]:
         if "regression" in self.description.lower():

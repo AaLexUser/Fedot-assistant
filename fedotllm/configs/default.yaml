@@ -16,10 +16,17 @@ feature_transformers:
       llm_model: ${llm.model}
       num_iterations: 5
       optimization_metric: roc
-autogluon:
-  predictor_init_kwargs: {}
-  predictor_fit_kwargs:
-    presets: best_quality
+automl:
+  enabled_framework: "autogluon"
+  autogluon:
+    predictor_init_kwargs: {}
+    predictor_fit_kwargs:
+      presets: best_quality
+  fedot:
+    predictor_init_kwargs:
+      preset: best_quality
+      safe_mode: True
+    predictor_fit_kwargs: {}
 llm:
   provider: openai
   model: gpt-4o-mini

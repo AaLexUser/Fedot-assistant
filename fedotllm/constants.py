@@ -10,6 +10,12 @@ TRAIN = "train"
 TEST = "test"
 OUTPUT = "output"
 
+# Task types
+TABULAR = "tabular"
+MULTIMODAL = "multimodal"
+TIME_SERIES = "time_series"
+TASK_TYPES = [TABULAR, MULTIMODAL, TIME_SERIES]
+
 # Problem types
 BINARY = "binary"
 MULTICLASS = "multiclass"

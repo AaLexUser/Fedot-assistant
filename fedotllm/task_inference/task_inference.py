@@ -1,11 +1,12 @@
 from typing import List, Dict, Optional, Union, Iterable, Any
-from ..task import TabularPredictionTask
+from ..task import PredictionTask
 from ..exceptions import OutputParserException
 import logging
 from autogluon.core.utils.utils import infer_problem_type
 from ..llm import AssistantChatOpenAI
 from ..prompting import (
     PromptGenerator,
+    TaskTypePromptGenerator,
     DescriptionFileNamePromptGenerator,
     DataFileNamePromptGenerator,
     LabelColumnPromptGenerator,
@@ -19,6 +20,7 @@ from ..constants import (
     NO_FILE_IDENTIFIED,
     NO_ID_COLUMN_IDENTIFIED,
     PROBLEM_TYPES,
+    TASK_TYPES,
     CLASSIFICATION_PROBLEM_TYPES,
     METRICS_DESCRIPTION,
     METRICS_BY_PROBLEM_TYPE
@@ -55,7 +57,7 @@ class TaskInference:
 
         logger.info(f"{bold_start}{prefix}{bold_end}: {value_str}")
 
-    def transform(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def transform(self, task: PredictionTask) -> PredictionTask:
         self.initialize_task(task)
         parser_output = self._chat_and_parse_prompt_output()
         for k, v in parser_output.items():
@@ -88,7 +90,7 @@ class TaskInference:
 class DescriptionFileNameInference(TaskInference):
     """Uses an LLM to locate the filenames of description files."""
 
-    def initialize_task(self, task: TabularPredictionTask):
+    def initialize_task(self, task: PredictionTask):
         filenames = [str(path) for path in task.filepaths]
         self.valid_values = filenames + [NO_FILE_IDENTIFIED]
         self.fallback_value = NO_FILE_IDENTIFIED
@@ -115,7 +117,7 @@ class DescriptionFileNameInference(TaskInference):
         return "\n\n".join(description_parts)
 
 
-    def transform(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def transform(self, task: PredictionTask) -> PredictionTask:
         self.initialize_task(task)
         parser_output = self._chat_and_parse_prompt_output()
         descriptions_read = self._read_descriptions(parser_output)
@@ -137,6 +139,11 @@ class DataFileNameInference(TaskInference):
         self.prompt_genetator = DataFileNamePromptGenerator(
             data_description=task.metadata["description"], filenames=filenames
         )
+
+class TaskTypeInference(TaskInference):
+    def initialize_task(self, task):
+        self.valid_values = TASK_TYPES
+        self.prompt_genetator = TaskTypePromptGenerator(data_description=task.metadata["description"])
 
 class LabelColumnInference(TaskInference):
     def initialize_task(self, task):
@@ -193,7 +200,7 @@ class BaseIDColumnInference(TaskInference):
             data_description=description, column_names=column_names, label_column=task.metadata["label_column"]
         )
     
-    def transform(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def transform(self, task: PredictionTask) -> PredictionTask:
         if self.get_data(task) is None:
             setattr(task, self.get_id_column_name(), None)
             return task

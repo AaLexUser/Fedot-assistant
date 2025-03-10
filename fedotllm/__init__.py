@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Annotated, List, Optional, Union
 from pathlib import Path
 import pandas as pd
+import datetime
 
 import typer
 from omegaconf import OmegaConf
@@ -16,14 +17,14 @@ from .constants import (
     NO_ID_COLUMN_IDENTIFIED
 )
 from .utils import load_config
-from .task import TabularPredictionTask
-from .assistant import TabularPredictionAssistant
+from .task import PredictionTask
+from .assistant import PredictionAssistant
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 
 def make_prediction_outputs(
-    task: TabularPredictionTask,
+    task: PredictionTask,
     predictions: Union[pd.DataFrame, pd.Series]
 ) -> pd.DataFrame:
     if isinstance(predictions, pd.Series):
@@ -153,12 +154,12 @@ def run_assistant(
         assert task_path.is_dir(), "Task path does not exist, please provide a valid directory."
         rprint(f"Task path: {task_path}")
         
-        task = TabularPredictionTask.from_path(task_path)
+        task = PredictionTask.from_path(task_path)
         
         rprint("[green]Task loaded![/green]")
         rprint(task)
         
-        assistant = TabularPredictionAssistant(config)
+        assistant = PredictionAssistant(config)
         
     with time_block("preprocessing task", timer):
         task = assistant.preprocess_task(task)
@@ -181,6 +182,20 @@ def run_assistant(
             make_prediction_outputs(task, predictions).to_csv(fp, index=False)
         
         rprint(f"[green] Prediction complete! Outputs written to {output_filename}[/green]")
+        
+    if config.save_artifacts.enabled:
+        artifacts_dir_name = f"{task.metadata['name']}_artifacts"
+        if config.save_artifacts.append_timestamp:
+            current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            artifacts_dir_name = f"{task.metadata['name']}_artifacts_{current_timestamp}"
+        
+        full_save_path = Path(config.save_artifacts.path) / artifacts_dir_name
+        
+        task.save_artifacts(
+            full_save_path, assistant.predictor
+        )
+        
+        rprint(f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}")
     
     return output_filename
         

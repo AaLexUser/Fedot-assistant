@@ -1,12 +1,18 @@
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from .llm import AssistantChatOpenAI
-from .predictor import AutogluonTabularPredictor
-from .task import TabularPredictionTask
+from .predictor import (
+    FedotTabularPredictor,
+    FedotMultiModalPredictor,
+    AutogluonTabularPredictor,
+    AutogluonMultimodalPredictor
+)
+from .task import PredictionTask
 from .utils import get_feature_transformers_config
 from .task_inference import (
     DataFileNameInference,
     DescriptionFileNameInference,
     LabelColumnInference,
+    TaskTypeInference,
     ProblemTypeInference,
     TestIDColumnInference,
     TrainIDColumnInference,
@@ -20,6 +26,11 @@ import sys
 from contextlib import contextmanager
 import signal
 from hydra.utils import instantiate
+from .constants import (
+    TABULAR,
+    MULTIMODAL,
+    REGRESSION
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,25 +55,27 @@ def timeout(seconds: int, error_message: Optional[str] = None):
             yield
         finally:
             signal.alarm(0)
+        
 
-class TabularPredictionAssistant:
+class PredictionAssistant:
     """A TabularPredictionAssistant performs a supervised tabular learning task"""
 
     def __init__(self, config: DictConfig) -> None:
         self.config = config
         self.llm = AssistantChatOpenAI(config.llm)
-        self.predictor = AutogluonTabularPredictor(config.autogluon)
         self.feature_transformers_config = get_feature_transformers_config(config)
         
     def handle_exception(self, stage: str, exception: Exception):
         raise Exception(str(exception), stage)
+        
 
-    def inference_task(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def inference_task(self, task: PredictionTask) -> PredictionTask:
         logger.info("Task understanding starts...")
         task_inference_preprocessors = [
             DescriptionFileNameInference,
             DataFileNameInference,
             LabelColumnInference,
+            TaskTypeInference,
             ProblemTypeInference
         ]
         
@@ -95,9 +108,9 @@ class TabularPredictionAssistant:
         logger.info("Task understanding complete!")
         return task
     
-    def preprocess_task(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def preprocess_task(self, task: PredictionTask) -> PredictionTask:
         task = self.inference_task(task)
-        if self.feature_transformers_config:
+        if task.task_type == TABULAR and self.feature_transformers_config:
             logger.info("Automatic feature generation starts...")
             fe_transformers = [instantiate(ft_config) for ft_config in self.feature_transformers_config]
             for fe_transformer in fe_transformers:
@@ -111,16 +124,37 @@ class TabularPredictionAssistant:
                     self.handle_exception(f"Task preprocessing: {fe_transformer.name}", e)
             logger.info("Automatic feature generation complete!")
         else:
-            logger.info("Automatic feature generation is disabled.")
+            logger.info("Automatic feature generation is disabled or not supported")
         return task
         
-    def fit_predictor(self, task: TabularPredictionTask, time_limit: float):
+    def fit_predictor(self, task: PredictionTask, time_limit: float):
+        match self.config.automl.enabled_framework:
+            case "fedot":
+                match task.task_type:
+                    case "tabular":
+                        self.predictor = FedotTabularPredictor(self.config.automl.fedot)
+                    case "multimodal":
+                        self.predictor = FedotMultiModalPredictor(self.config.automl.fedot)
+                    case _:
+                        raise ValueError(f"Fedot doesn't support {task.task_type} tasks")
+            case "autogluon":
+                match task.task_type:
+                    case "tabular":
+                        self.predictor = AutogluonTabularPredictor(self.config.automl.autogluon)
+                    case "multimodal":
+                        self.predictor = AutogluonMultimodalPredictor(self.config.automl.autogluon)
+                    case _:
+                        raise ValueError(f"AutoGluon doesn't support {task.task_type} tasks")      
+            case _:
+                raise ValueError("Unknown automl framework: {self.config.automl.enabled_framework}")
         try:
+            if isinstance(self.predictor, FedotTabularPredictor):
+                time_limit = time_limit / 60
             self.predictor.fit(task, time_limit=time_limit)
         except Exception as e:
             self.handle_exception("Predictor Fit", e)
     
-    def predict(self, task: TabularPredictionTask) -> Any:
+    def predict(self, task: PredictionTask) -> Any:
         try:
             return self.predictor.predict(task)
         except Exception as e:
