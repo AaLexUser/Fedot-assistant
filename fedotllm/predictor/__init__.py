@@ -5,4 +5,5 @@ from .fedot import (
 from .autogluon import (
     AutogluonTabularPredictor,
     AutogluonMultimodalPredictor,
+    AutogluonTimeSeriesPredictor
 )

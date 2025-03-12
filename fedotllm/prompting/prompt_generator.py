@@ -6,7 +6,8 @@ from ..constants import (NO_FILE_IDENTIFIED,
                           PROBLEM_TYPES,
                           NO_ID_COLUMN_IDENTIFIED,
                           METRICS_DESCRIPTION,
-                          TASK_TYPES)
+                          TASK_TYPES, 
+                          DATA_EXTENSIONS)
 from .utils import get_outer_columns, parse_and_check_json
 from functools import partial
 
@@ -134,6 +135,52 @@ class DataFileNamePromptGenerator(PromptGenerator):
                 self.get_field_parsing_prompt(),
             ]
         )
+        
+class StaticFeaturesFileNamePromptGenerator(PromptGenerator):
+    fields = ["static_features_data"]
+
+    def __init__(self, data_description: str, filenames: list, data_description_file: str):
+        super().__init__(data_description)
+        self.data_description_file = data_description_file
+        self.filenames = filenames
+        
+    def read_file_safely(self, filename: Path) -> Union[str, None]:
+        try:
+            return filename.read_text()
+        except UnicodeDecodeError:
+            return None
+
+    def generate_prompt(self) -> str:
+        file_content_prompts = "# Available Data File And Content in The File\n\n"
+        for filename in map(Path, self.filenames):
+            if is_text_file(filename):
+                content = self.read_file_safely(filename)
+                if content is not None:
+                    truncated_contents = content[:100].strip()
+                    if len(content) > 100:
+                        truncated_contents += "..."
+                    file_content_prompts += f"File:\n\n{filename} Truncated Content:\n{truncated_contents}\n\n"
+        
+        file_content_prompts += (f"Based on the data description, what is the static features data? "
+                                 "Static features are the time-independent attribures (metadata) of a time series. "
+                                 "These may include information such as:\n"
+                                 "- location, where the time series was recorded (country, state, city)\n"
+                                 "- fixed properties of a product (brand name, color, size, weight)\n"
+                                 "- store ID or product ID"
+                                 "The file contains a table with features."
+                                 "The static features file may contain keywords such as 'metadata', 'static_features'"
+                                 f"File can't be {self.data_description_file}."
+                                 f"File extention must be in {', '.join(DATA_EXTENSIONS)} "
+                                 "Please return the full path of the data files as provided, "
+                                 f"and response with the value {NO_FILE_IDENTIFIED} if there's no such File.")
+        
+        return "\n\n".join(
+            [
+                self.basic_intro_prompt,
+                file_content_prompts,
+                self.get_field_parsing_prompt(),
+            ]
+        )
     
 class LabelColumnPromptGenerator(PromptGenerator):
     fields = ["label_column"]
@@ -166,7 +213,43 @@ class ProblemTypePromptGenerator(PromptGenerator):
                 self.get_field_parsing_prompt(),
             ]
         )
+
+class TimestampColumnPromptGenerator(PromptGenerator):
+    fields= ["timestamp_column"]
+
+    def __init__(self, data_description: str, column_names: list):
+        super().__init__(data_description)
+        self.column_names = get_outer_columns(column_names)
     
+    def generate_prompt(self) -> str:
+        return "\n\n".join(
+            [
+                self.basic_intro_prompt,
+                self.data_description_prompt,
+                ("Based on the data description, which one of these columns is likely to be the timestamp column:"
+                 f"\n{', '.join(self.column_names)}"),
+                self.get_field_parsing_prompt(),
+            ]
+        )
+    
+class ForecastLengthPromptGenerator(PromptGenerator):
+    fields = ["forecast_horizon"]
+    
+    def __init__(self, data_description: str):
+        super().__init__(data_description)
+    
+    def generate_prompt(self) -> str:
+        return "\n\n".join(
+            [
+                self.basic_intro_prompt,
+                self.data_description_prompt,
+                ("Based on the data description, what is the forecast horizon (prediction_length) according to the task?"
+                 "Please return an integer number, and response with the value {DEFAULT_FORECAST_HORIZON} if there's no information provided."
+                ),
+                self.get_field_parsing_prompt(),
+            ]
+        )
+        
 class IDColumnPromptGenerator(PromptGenerator):
     fields = ["id_column"]
 

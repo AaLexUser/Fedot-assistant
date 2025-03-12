@@ -11,6 +11,9 @@ from ..prompting import (
     DataFileNamePromptGenerator,
     LabelColumnPromptGenerator,
     ProblemTypePromptGenerator,
+    TimestampColumnPromptGenerator,
+    StaticFeaturesFileNamePromptGenerator,
+    ForecastLengthPromptGenerator,
     TestIDColumnPromptGenerator,
     TrainIDColumnPromptGenerator,
     OutputIDColumnPromptGenerator,
@@ -123,6 +126,9 @@ class DescriptionFileNameInference(TaskInference):
         descriptions_read = self._read_descriptions(parser_output)
         if descriptions_read:
             task.metadata["description"] = descriptions_read
+        if "data_description_file" in parser_output.keys():
+            task.data_description_file = parser_output["data_description_file"]
+            self.log_value("data_description_file", parser_output["data_description_file"])
         self.log_value("description", descriptions_read)
         return task
     
@@ -139,6 +145,20 @@ class DataFileNameInference(TaskInference):
         self.prompt_genetator = DataFileNamePromptGenerator(
             data_description=task.metadata["description"], filenames=filenames
         )
+        
+class StaticFeaturesFileNameInference(TaskInference):
+    """Uses an LLM to locate the filename of static features data"""
+    
+    def initialize_task(self, task: PredictionTask):
+        exclude_files = [path.resolve() for _, path in task.files_mapping.items() if path is not None]
+        filenames = [str(path) for path in task.filepaths if path.resolve() not in exclude_files]
+        self.valid_values = filenames + [NO_FILE_IDENTIFIED]
+        self.fallback_value = NO_FILE_IDENTIFIED
+        self.ignored_value = [NO_FILE_IDENTIFIED]
+        self.prompt_genetator = StaticFeaturesFileNamePromptGenerator(
+            data_description=task.metadata["description"], filenames=filenames,
+            data_description_file=task.data_description_file
+        )
 
 class TaskTypeInference(TaskInference):
     def initialize_task(self, task):
@@ -151,6 +171,21 @@ class LabelColumnInference(TaskInference):
         self.valid_values = column_names
         self.prompt_genetator = LabelColumnPromptGenerator(
             data_description=task.metadata["description"], column_names=column_names
+        )
+        
+class TimestampColumnInference(TaskInference):
+    def initialize_task(self, task):
+        column_names = list(task.train_data.columns)
+        self.valid_values = column_names
+        self.prompt_genetator = TimestampColumnPromptGenerator(
+            data_description=task.metadata["description"], column_names=column_names
+        )
+
+class ForecastHorizonInference(TaskInference):
+    def initialize_task(self, task):
+        self.valid_values = None
+        self.prompt_genetator = ForecastLengthPromptGenerator(
+            data_description=task.metadata["description"]
         )
 
 class ProblemTypeInference(TaskInference):

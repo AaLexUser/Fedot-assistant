@@ -2,20 +2,25 @@
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import logging
 import pandas as pd
 from fedotllm.tabular import TabularDataset, load_pd
 from .constants import (
     OUTPUT,
     TEST,
     TRAIN,
+    DESCRIPTION,
+    STATIC_FEATURES,
     REGRESSION,
     BINARY,
     PREFERED_METRIC_BY_PROBLEM_TYPE,
     TABULAR,
     MULTIMODAL,
-    TIME_SERIES
+    TIME_SERIES,
+    DEFAULT_FORECAST_HORIZON
 )
 
+logger = logging.getLogger(__name__)
 
 class PredictionTask:
     """A task contains data and metadata for a tabular machine learning task, including datasets, metadata such as
@@ -33,24 +38,35 @@ class PredictionTask:
         self.metadata: Dict[str, Any] = {
             "name": name,
             "description": description,
+            "data_description_file": None,
             "task_type": None,
             "label_column": None,
             "problem_type": None,
             "eval_metric": None,  # string, keying Autogluon Tabular metrics
             "test_id_column": None,
-            "images_column": None
+            "images_column": None,
+            "forecast_horizon": None
         }
 
         self.metadata.update(metadata)
 
         self.filepaths = filepaths
         self.cache_data = cache_data
+        
+        self.files_mapping: Dict[str, Union[Path, None]] = {
+            DESCRIPTION: None,
+            TRAIN: None,
+            TEST: None,
+            OUTPUT: None,
+            STATIC_FEATURES: None
+        }
 
         # TODO: each data split can have multiple files
         self.dataset_mapping: Dict[str, Union[Path, TabularDataset]] = {
             TRAIN: None,
             TEST: None,
             OUTPUT: None,
+            STATIC_FEATURES: None
         }
 
     def __repr__(self) -> str:
@@ -79,7 +95,7 @@ class PredictionTask:
         predictor.save_artifacts(full_save_path)
                 
                 
-    def load_task_data(self, dataset_key: Union[str, str]) -> pd.DataFrame:
+    def load_task_data(self, dataset_key: str) -> pd.DataFrame:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:
             raise ValueError(
@@ -148,6 +164,8 @@ class PredictionTask:
 
     @train_data.setter
     def train_data(self, data: Union[str, Path, TabularDataset]) -> None:
+        if isinstance(data, (str, Path)):
+            self.files_mapping[TRAIN] = Path(data) 
         self._set_task_files({TRAIN: data})
 
     @property
@@ -156,6 +174,8 @@ class PredictionTask:
 
     @test_data.setter
     def test_data(self, data: Union[str, Path, TabularDataset]) -> None:
+        if isinstance(data, (str, Path)):
+            self.files_mapping[TEST] = Path(data) 
         self._set_task_files({TEST: data})
 
     @property
@@ -166,9 +186,48 @@ class PredictionTask:
     def sample_submission_data(
         self, data: Union[str, Path, TabularDataset]
     ) -> None:
+        if isinstance(data, (str, Path)):
+            self.files_mapping[OUTPUT] = Path(data) 
         if self.sample_submission_data is not None:
             raise ValueError("Output data already set for task")
         self._set_task_files({OUTPUT: data})
+        
+    @property
+    def static_features_data(self) -> TabularDataset:
+        return self.load_task_data(STATIC_FEATURES)
+    
+    @static_features_data.setter
+    def static_features_data(
+        self, data: Union[str, Path, TabularDataset]) -> None:
+        if isinstance(data, (str, Path)):
+            self.files_mapping[STATIC_FEATURES] = Path(data)
+        self._set_task_files({STATIC_FEATURES: data})
+        
+    @property
+    def data_description_file(self) -> Optional[str]:
+        return self.metadata["data_description_file"]
+    
+    @data_description_file.setter
+    def data_description_file(self, data: str) -> None:
+        if isinstance(data, (str, Path)):
+            self.files_mapping[DESCRIPTION] = Path(data) 
+        self.metadata["data_description_file"] = data
+        
+    @property
+    def forecast_horizon(self) -> int:
+        horizon = None
+        data = self.metadata["forecast_horizon"]
+        if isinstance(data, str):
+            horizon = _safe_int_conversion(data)
+        elif isinstance(data, int):
+            horizon = data
+        if horizon is None:
+            horizon = DEFAULT_FORECAST_HORIZON
+        return horizon
+    
+    @forecast_horizon.setter
+    def forecast_horizon(self, data: int | str):
+        self.metadata["forecast_horizon"] = data
     
     @property
     def output_columns(self) -> List[str]:
@@ -186,12 +245,25 @@ class PredictionTask:
         if "label_column" in self.metadata and self.metadata["label_column"]:
             return self.metadata["label_column"]
         else:
-            # should ideally never be called after LabelColumnInferenceTransform has run
+            # should ideally never be called after LabelColumnInference has run
             return self._infer_label_column_from_sample_submission_data()
 
     @label_column.setter
     def label_column(self, label_column: str) -> None:
         self.metadata["label_column"] = label_column
+        
+    @property
+    def timestamp_column(self) -> Optional[str]:
+        """Return the timestamp column for the task."""
+        if "timestamp_column" in self.metadata and self.metadata["timestamp_column"]:
+            return self.metadata["timestamp_column"]
+        else:
+            # should ideally never be called after TimestampColumnInference has run
+            return self._find_timestamp_column_in_train()
+        
+    @timestamp_column.setter
+    def timestamp_column(self, data: str) -> None:
+        self.metadata["timestamp_column"] = data
         
     @property
     def columns_in_train_but_not_test(self) -> List[str]:
@@ -289,6 +361,14 @@ class PredictionTask:
             "Unable to infer the label column. Please specify it manually."
         )
         
+    def _find_timestamp_column_in_train(self) -> Optional[str]:
+        """Find column that contain timestamp"""
+        if self.train_data is not None:
+            datetime_cols = [col for col in self.train_data.columns if self.train_data[col].dtype.kind == 'M']
+            if len(datetime_cols) > 0:
+                return datetime_cols[0]
+        return None
+        
     def _find_path_column_in_train(self) -> Optional[str]:
         """Find column that contain paths"""
         path_columns = []
@@ -302,8 +382,7 @@ class PredictionTask:
         if len(path_columns) > 0:
             return path_columns[0]
         return None
-    
-      
+            
     def _find_task_type_in_description(self) -> Optional[str]:
         desc = self.description.lower()
         # Check in priority order
@@ -321,4 +400,11 @@ class PredictionTask:
         elif "classification" in self.description.lower():
             return BINARY
         else:
+            return None
+        
+def _safe_int_conversion(string_value: str):
+        try:
+            return int(string_value)
+        except ValueError:
+            logger.warning(f"Could not covert '{string_value}' to an integer")
             return None

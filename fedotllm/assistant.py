@@ -4,11 +4,13 @@ from .predictor import (
     FedotTabularPredictor,
     FedotMultiModalPredictor,
     AutogluonTabularPredictor,
-    AutogluonMultimodalPredictor
+    AutogluonMultimodalPredictor,
+    AutogluonTimeSeriesPredictor
 )
 from .task import PredictionTask
 from .utils import get_feature_transformers_config
 from .task_inference import (
+    TaskInference,
     DataFileNameInference,
     DescriptionFileNameInference,
     LabelColumnInference,
@@ -17,10 +19,13 @@ from .task_inference import (
     TestIDColumnInference,
     TrainIDColumnInference,
     OutputIDColumnInference,
-    EvalMetricInference
+    EvalMetricInference,
+    TimestampColumnInference,
+    StaticFeaturesFileNameInference,
+    ForecastHorizonInference,
 )
 import threading
-from typing import Optional, Any
+from typing import Optional, Any, List
 import logging
 import sys
 from contextlib import contextmanager
@@ -29,7 +34,8 @@ from hydra.utils import instantiate
 from .constants import (
     TABULAR,
     MULTIMODAL,
-    REGRESSION
+    REGRESSION,
+    TIME_SERIES
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +73,22 @@ class PredictionAssistant:
         
     def handle_exception(self, stage: str, exception: Exception):
         raise Exception(str(exception), stage)
+    
+    def _run_task_inference_preprocessors(
+        self,
+        task_inference_preprocessors: List[TaskInference],
+        task: PredictionTask
+    ):
+        for preprocessor_class in task_inference_preprocessors:
+            preprocessor = preprocessor_class(llm=self.llm)
+            try:
+                with timeout(
+                    seconds=self.config.task_preprocessors_timeout,
+                    error_message=f"Task inference preprocessing time out: {preprocessor_class}",
+                ):
+                    task = preprocessor.transform(task)
+            except Exception as e:
+                self.handle_exception(f"Task inference preprocessing: {preprocessor_class}", e)
         
 
     def inference_task(self, task: PredictionTask) -> PredictionTask:
@@ -89,16 +111,18 @@ class PredictionAssistant:
         if self.config.infer_eval_metric:
             task_inference_preprocessors += [EvalMetricInference]
             
-        for preprocessor_class in task_inference_preprocessors:
-            preprocessor = preprocessor_class(llm=self.llm)
-            try:
-                with timeout(
-                    seconds=self.config.task_preprocessors_timeout,
-                    error_message=f"Task inference preprocessing time out: {preprocessor_class}",
-                ):
-                    task = preprocessor.transform(task)
-            except Exception as e:
-                self.handle_exception(f"Task inference preprocessing: {preprocessor_class}", e)
+        self._run_task_inference_preprocessors(task_inference_preprocessors, task)
+        
+        # Task type specific
+                        
+        if task.problem_type == TIME_SERIES:
+            timeseries_inference_preprocessors = [
+                TimestampColumnInference,
+                StaticFeaturesFileNameInference,
+                ForecastHorizonInference
+            ]        
+        
+            self._run_task_inference_preprocessors(timeseries_inference_preprocessors, task)
         
         bold_start = "\033[1m"
         bold_end = "\033[0m"
@@ -143,6 +167,8 @@ class PredictionAssistant:
                         self.predictor = AutogluonTabularPredictor(self.config.automl.autogluon)
                     case "multimodal":
                         self.predictor = AutogluonMultimodalPredictor(self.config.automl.autogluon)
+                    case "time_series":
+                        self.predictor = AutogluonTimeSeriesPredictor(self.config.automl.autogluon)
                     case _:
                         raise ValueError(f"AutoGluon doesn't support {task.task_type} tasks")      
             case _:

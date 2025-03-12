@@ -57,7 +57,7 @@ def make_prediction_outputs(
         )
         
         for col in missing_columns:
-            if col in task.test_data.columns:
+            if task.test_data is not None and col in task.test_data.columns:
                 # Copy from test data if available
                 outputs[col] = task.test_data[col]
                 print(f"Warming: Copied from test data for column '{col}'")

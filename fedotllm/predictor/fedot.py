@@ -17,10 +17,6 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import logging
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
 from functools import partial
 
 from ..constants import (
@@ -121,9 +117,9 @@ def prepare_multi_model_data(
         sources.update({"data_source_img": data_img})
     
     text_data_detector = TextDataDetector()
-    if len(text_data_detector) > 0:
-        text_columns = text_data_detector.define_text_columns(data)
-        
+    text_columns = text_data_detector.define_text_columns(data)
+    print(text_columns)
+    if len(text_columns) > 0:
         data_text = text_data_detector.prepare_multimodal_data(data, text_columns)
         data_part_transformation_func = partial(array_to_input_data,
                                                     idx=idx, target_array=target, task=task)
@@ -133,6 +129,7 @@ def prepare_multi_model_data(
                             data_part_transformation_func(features_array=data_part, data_type=DataTypesEnum.text))
                             for (data_part_key, data_part) in data_text.items()
                             if not text_data_detector.is_full_of_nans(data_part))
+        sources.update(text_sources)
     
     #TODO: add sources to dict
     data_table = InputData(
