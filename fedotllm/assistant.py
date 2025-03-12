@@ -152,7 +152,7 @@ class PredictionAssistant:
         return task
         
     def fit_predictor(self, task: PredictionTask, time_limit: float):
-        match self.config.automl.enabled_framework:
+        match self.config.automl.enabled:
             case "fedot":
                 match task.task_type:
                     case "tabular":
@@ -172,7 +172,7 @@ class PredictionAssistant:
                     case _:
                         raise ValueError(f"AutoGluon doesn't support {task.task_type} tasks")      
             case _:
-                raise ValueError("Unknown automl framework: {self.config.automl.enabled_framework}")
+                raise ValueError("Unknown automl framework: {self.config.automl.enabled}")
         try:
             if isinstance(self.predictor, FedotTabularPredictor):
                 time_limit = time_limit / 60

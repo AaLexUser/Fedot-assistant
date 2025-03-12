@@ -17,7 +17,7 @@ feature_transformers:
       num_iterations: 5
       optimization_metric: roc
 automl:
-  enabled_framework: "autogluon"
+  enabled: "autogluon"
   autogluon:
     predictor_init_kwargs: {}
     predictor_fit_kwargs:
