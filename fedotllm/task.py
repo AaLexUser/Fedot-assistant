@@ -327,6 +327,10 @@ class PredictionTask:
         return self.metadata["images_column"] or (
             self._find_path_column_in_train() if self.train_data is not None else None)
         
+    @property
+    def text_columns(self) -> List[str]:
+        return self._find_text_columns_in_train()
+        
         
     def _infer_label_column_from_sample_submission_data(self) -> Optional[str]:
         if self.output_columns is None:
@@ -361,10 +365,24 @@ class PredictionTask:
             "Unable to infer the label column. Please specify it manually."
         )
         
+    def _find_text_columns_in_train(self) -> List[str]:
+        if self.train_data is not None:
+            return [
+                col 
+                for col in self.train_data.columns
+                if _column_contains_text(self.train_data[col])
+                and col != self.images_column
+            ]
+        return []
+        
     def _find_timestamp_column_in_train(self) -> Optional[str]:
         """Find column that contain timestamp"""
         if self.train_data is not None:
-            datetime_cols = [col for col in self.train_data.columns if self.train_data[col].dtype.kind == 'M']
+            datetime_cols = [
+                col 
+                for col in self.train_data.columns
+                if self.train_data[col].dtype.kind == 'M'
+            ]
             if len(datetime_cols) > 0:
                 return datetime_cols[0]
         return None
@@ -408,3 +426,34 @@ def _safe_int_conversion(string_value: str):
         except ValueError:
             logger.warning(f"Could not covert '{string_value}' to an integer")
             return None
+        
+def _is_float_compatible(column: pd.Series) -> bool:
+        """
+        :param column: pandas series with data
+        :return: True if column contains only float or nan values
+        """
+        nans_number = column.isna().sum()
+        converted_column = pd.to_numeric(column, errors='coerce')
+        result_nans_number = converted_column.isna().sum()
+        failed_objects_number = result_nans_number - nans_number
+        non_nan_all_objects_number = len(column) - nans_number
+        failed_ratio = failed_objects_number / non_nan_all_objects_number
+        return failed_ratio < 0.5
+    
+def _column_contains_text(column: pd.Series) -> bool:
+        """
+        Column contains text if:
+        1. it's not float or float compatible
+        (e.g. ['1.2', '2.3', '3.4', ...] is float too)
+        2. fraction of unique values (except nans) is more than 0.95
+
+        :param column: pandas series with data
+        :return: True if column contains text
+        """
+        FRACTION_OF_UNIQUE_VALUES = 0.95
+        if column.dtype == object and not _is_float_compatible(column):
+            unique_num = len(column.unique())
+            nan_num = pd.isna(column).sum()
+            return unique_num / len(column) > FRACTION_OF_UNIQUE_VALUES if nan_num == 0 \
+                else (unique_num - 1) / (len(column) - nan_num) > FRACTION_OF_UNIQUE_VALUES
+        return False

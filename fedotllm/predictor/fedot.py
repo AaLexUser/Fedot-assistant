@@ -92,54 +92,55 @@ def prepare_multi_model_data(
     idx_column: Optional[str],
     task: PredictionTask
 ) -> MultiModalData:
-    # Verify critical columns exist
-    if task.label_column not in data.columns:
-        raise ValueError(f"Target column '{task.label_column}' not found in dataset")
-    if task.images_column not in data.columns:
-        raise ValueError(f"Images column '{task.images_column}' not found in dataset")
-
-    target = data[task.label_column].to_numpy()
+        
     idx = data[idx_column].to_numpy() if idx_column else np.arange(len(data))
+    task_problem_type = _get_task_with_params(PROBLEM_TO_FEDOT[task.problem_type])
     sources = {}
     
-    # Prepare image data
+    table_features = data.copy()
+    target = (data[task.label_column].to_numpy()
+              if task.label_column in data.columns
+              else None)
+    if target is not None:
+        table_features = table_features.drop(task.label_column, axis=1)
+
     if task.images_column is None:
         logger.warning("Images column not found")
     else:
+        logger.info(f"Images column: {task.images_column}")
         data_img = InputData(
+                    idx=idx,
+                    task=task_problem_type,
+                    data_type=DataTypesEnum.image,
+                    features=_load_images_from_dataframe(data, task.images_column),
+                    target=target
+                )
+        table_features = table_features.drop(task.images_column, axis=1)
+        sources.update({"data_source_img": data_img})
+
+    if len(task.text_columns) > 0:
+        logger.info(f"Found {task.text_columns} text columns.")
+        data_text = InputData(
             idx=idx,
-            task=_get_task_with_params(PROBLEM_TO_FEDOT[task.problem_type]),
-            data_type=DataTypesEnum.image,
-            features=_load_images_from_dataframe(data, task.images_column),
+            task=task_problem_type,
+            data_type=DataTypesEnum.text,
+            features=data[task.text_columns].to_numpy(),
             target=target
         )
-        data = data.drop(columns=[task.images_column, task.label_column])
-        sources.update({"data_source_img": data_img})
-    
-    text_data_detector = TextDataDetector()
-    text_columns = text_data_detector.define_text_columns(data)
-    print(text_columns)
-    if len(text_columns) > 0:
-        data_text = text_data_detector.prepare_multimodal_data(data, text_columns)
-        data_part_transformation_func = partial(array_to_input_data,
-                                                    idx=idx, target_array=target, task=task)
-        data = data.drop(columns=text_columns)
-        
-        text_sources = dict((text_data_detector.new_key_name(data_part_key),
-                            data_part_transformation_func(features_array=data_part, data_type=DataTypesEnum.text))
-                            for (data_part_key, data_part) in data_text.items()
-                            if not text_data_detector.is_full_of_nans(data_part))
-        sources.update(text_sources)
-    
-    #TODO: add sources to dict
-    data_table = InputData(
-        idx=idx,
-        task=_get_task_with_params(PROBLEM_TO_FEDOT[task.problem_type]),
-        data_type=DataTypesEnum.table,
-        features=data.to_numpy(),
-        target=target 
-    )
-    sources.update({"data_source_table": data_table})
+        table_features = table_features.drop(task.text_columns, axis=1)
+        sources.update({"data_source_text": data_text})
+
+    if len(table_features.columns) > 0:
+        logger.info("Found table features.")
+        data_table = InputData(
+                idx=idx,
+                task=task_problem_type,
+                data_type=DataTypesEnum.table,
+                features=table_features.to_numpy(),
+                target=target
+            )
+
+        sources.update({"data_source_table": data_table})
     
     return MultiModalData(sources)
 
@@ -235,7 +236,11 @@ class FedotMultiModalPredictor(Predictor):
         return self
     
     def predict(self, task: PredictionTask) -> TabularDataset:
-        test_data = prepare_multi_model_data(task.test_data, task.test_id_column, task)
+        test_data = (task.test_data.drop(task.label_column, axis=1)
+                if task.label_column in task.test_data
+                else task.test_data)
+            
+        test_data = prepare_multi_model_data(test_data, task.test_id_column, task)
         
         if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [
             BINARY,

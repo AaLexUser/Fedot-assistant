@@ -29,7 +29,7 @@ automl:
     predictor_fit_kwargs: {}
 llm:
   provider: openai
-  model: gpt-4o
+  model: gpt-4o-mini
   base_url: https://models.inference.ai.azure.com
   api_key: ${env:OPENAI_API_KEY}
   max_tokens: 512

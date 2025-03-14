@@ -174,7 +174,7 @@ class PredictionAssistant:
             case _:
                 raise ValueError("Unknown automl framework: {self.config.automl.enabled}")
         try:
-            if isinstance(self.predictor, FedotTabularPredictor):
+            if self.config.automl.enabled == "fedot":
                 time_limit = time_limit / 60
             self.predictor.fit(task, time_limit=time_limit)
         except Exception as e:
