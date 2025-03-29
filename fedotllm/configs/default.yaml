@@ -25,12 +25,11 @@ automl:
   fedot:
     predictor_init_kwargs:
       preset: best_quality
-      safe_mode: True
     predictor_fit_kwargs: {}
 llm:
   provider: openai
   model: gpt-4o-mini
-  base_url: https://models.inference.ai.azure.com
+  # base_url: https://models.inference.ai.azure.com
   api_key: ${env:OPENAI_API_KEY}
   max_tokens: 512
   temperature: 0

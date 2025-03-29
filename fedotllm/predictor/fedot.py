@@ -53,21 +53,6 @@ PROBLEM_TO_FEDOT = {
     REGRESSION: "regression"
 }
 
-def _get_task_with_params(problem: str, task_params: Optional[TaskParams] = None) -> Task:
-        """ Creates Task from problem name and task_params"""
-        if problem == 'ts_forecasting' and task_params is None:
-            logger.warning(f'The value of the forecast depth was set to {DEFAULT_FORECAST_LENGTH}.')
-            task_params = TsForecastingParams(forecast_length=DEFAULT_FORECAST_LENGTH)
-
-        task_dict = {'regression': Task(TaskTypesEnum.regression, task_params=task_params),
-                     'classification': Task(TaskTypesEnum.classification, task_params=task_params),
-                     'ts_forecasting': Task(TaskTypesEnum.ts_forecasting, task_params=task_params)
-                     }
-        try:
-            return task_dict[problem]
-        except ValueError:
-            ValueError('Wrong type name of the given task')
-
 #TODO: choose targer_size more reasonably
 def _load_images_from_dataframe(df, image_column, target_size=(128, 128)):
         images = []
@@ -89,12 +74,10 @@ def _load_images_from_dataframe(df, image_column, target_size=(128, 128)):
     
 def prepare_multi_model_data(
     data: pd.DataFrame,
-    idx_column: Optional[str],
-    task: PredictionTask
+    task: PredictionTask,
 ) -> MultiModalData:
         
-    idx = data[idx_column].to_numpy() if idx_column else np.arange(len(data))
-    task_problem_type = _get_task_with_params(PROBLEM_TO_FEDOT[task.problem_type])
+    task_problem_type = Task(TaskTypesEnum(PROBLEM_TO_FEDOT[task.problem_type]))
     sources = {}
     
     table_features = data.copy()
@@ -104,41 +87,39 @@ def prepare_multi_model_data(
     if target is not None:
         table_features = table_features.drop(task.label_column, axis=1)
 
-    if task.images_column is None:
-        logger.warning("Images column not found")
-    else:
-        logger.info(f"Images column: {task.images_column}")
-        data_img = InputData(
-                    idx=idx,
-                    task=task_problem_type,
-                    data_type=DataTypesEnum.image,
-                    features=_load_images_from_dataframe(data, task.images_column),
-                    target=target
-                )
+    if task.images_column is not None:
+        logger.info(f"Found images column: {task.images_column}")
+        data_img = InputData.from_image(
+            images=_load_images_from_dataframe(data, task.images_column),
+            labels=target,
+            task=task_problem_type
+        )
         table_features = table_features.drop(task.images_column, axis=1)
         sources.update({"data_source_img": data_img})
 
     if len(task.text_columns) > 0:
         logger.info(f"Found {task.text_columns} text columns.")
         data_text = InputData(
-            idx=idx,
+            idx=data[task.text_columns].index.to_numpy(),
+            features=data[task.text_columns].to_numpy(),
+            target=target,
             task=task_problem_type,
             data_type=DataTypesEnum.text,
-            features=data[task.text_columns].to_numpy(),
-            target=target
+            features_names=data[task.text_columns].columns.to_numpy()
         )
         table_features = table_features.drop(task.text_columns, axis=1)
         sources.update({"data_source_text": data_text})
 
     if len(table_features.columns) > 0:
-        logger.info("Found table features.")
+        logger.info(f"Found table features: {len(table_features.columns)}.")
         data_table = InputData(
-                idx=idx,
-                task=task_problem_type,
-                data_type=DataTypesEnum.table,
-                features=table_features.to_numpy(),
-                target=target
-            )
+            idx=table_features.index.to_numpy(),
+            features=table_features.to_numpy(),
+            target=target,
+            task=task_problem_type,
+            data_type=DataTypesEnum.table,
+            features_names=table_features.columns.to_numpy()
+        )
 
         sources.update({"data_source_table": data_table})
     
@@ -214,7 +195,7 @@ class FedotMultiModalPredictor(Predictor):
             **unpack_omega_config(self.config.predictor_init_kwargs)  
         }
         
-        train_data = prepare_multi_model_data(task.train_data, task.train_id_column, task)
+        train_data = prepare_multi_model_data(task.train_data, task)
         
         predictor_fit_kwargs = self.config.predictor_fit_kwargs
         
@@ -240,7 +221,7 @@ class FedotMultiModalPredictor(Predictor):
                 if task.label_column in task.test_data
                 else task.test_data)
             
-        test_data = prepare_multi_model_data(test_data, task.test_id_column, task)
+        test_data = prepare_multi_model_data(test_data, task)
         
         if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [
             BINARY,
@@ -251,7 +232,7 @@ class FedotMultiModalPredictor(Predictor):
             )
         else:
             predictions = self.predictor.predict(test_data)
-        return pd.DataFrame(predictions, columns=[task.label_column])
+        return pd.DataFrame(predictions, columns=[task.label_column], index=task.test_data.index)
         
     def save_artifacts(self, path: str):
         self.predictor.current_pipeline.save(path)

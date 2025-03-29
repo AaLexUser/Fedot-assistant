@@ -16,9 +16,9 @@ class AssistantChatOpenAI:
         self.output_ = 0
 
         self.model = config.model
-        self.base_url = config.base_url
-        self.temperature = config.temperature
-        self.max_tokens = config.max_tokens
+        self.base_url = config.get("base_url", None)
+        self.temperature = config.get("temperature", 0)
+        self.max_tokens = config.get("max_tokens", 512)
 
         if "OPENAI_API_KEY" in os.environ:
             api_key = os.environ["OPENAI_API_KEY"]
