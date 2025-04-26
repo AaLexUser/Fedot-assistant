@@ -1,1 +1,1 @@
-from .llm import AssistantChatOpenAI
+from .llm import AssistantChatOpenAI, clip_text

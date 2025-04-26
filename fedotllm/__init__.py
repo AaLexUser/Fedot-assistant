@@ -11,11 +11,7 @@ import typer
 from omegaconf import OmegaConf
 from rich import print as rprint
 
-from .constants import (
-    DEFAULT_QUALITY,
-    PRESETS,
-    NO_ID_COLUMN_IDENTIFIED
-)
+from .constants import DEFAULT_QUALITY, PRESETS, NO_ID_COLUMN_IDENTIFIED
 from .utils import load_config
 from .task import PredictionTask
 from .assistant import PredictionAssistant
@@ -23,31 +19,36 @@ from .assistant import PredictionAssistant
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 
+
 def make_prediction_outputs(
-    task: PredictionTask,
-    predictions: Union[pd.DataFrame, pd.Series]
+    task: PredictionTask, predictions: Union[pd.DataFrame, pd.Series]
 ) -> pd.DataFrame:
     if isinstance(predictions, pd.Series):
         outputs = predictions.to_frame()
     else:
         outputs = predictions.copy()
-    
+
     # Ensure we only keep required output columns from predictions
     common_cols = [col for col in task.output_columns if col in outputs.columns]
     outputs = outputs[common_cols]
-    
+
     # Handle specific test ID column if providded and detected
-    if task.test_id_column is not None and task.test_id_column != NO_ID_COLUMN_IDENTIFIED:
+    if (
+        task.test_id_column is not None
+        and task.test_id_column != NO_ID_COLUMN_IDENTIFIED
+    ):
         test_ids = task.test_data[task.test_id_column]
         output_ids = task.sample_submission_data[task.output_id_column]
-        
+
         if not test_ids.equals(output_ids):
             print("Warming: Test IDs and output IDs do not match!")
-            
+
         # Ensure test ID column is included
         if task.test_id_column not in outputs.columns:
-            outputs = pd.concat([task.test_data[task.test_id_column], outputs], axis="columns")
-    
+            outputs = pd.concat(
+                [task.test_data[task.test_id_column], outputs], axis="columns"
+            )
+
     # Handle undetected ID columns
     missing_columns = [col for col in task.output_columns if col not in outputs.columns]
     if missing_columns:
@@ -55,7 +56,7 @@ def make_prediction_outputs(
             "Warming: The following columns are not in predictions and will be treated as ID columns:"
             f"{missing_columns}"
         )
-        
+
         for col in missing_columns:
             if task.test_data is not None and col in task.test_data.columns:
                 # Copy from test data if available
@@ -64,12 +65,14 @@ def make_prediction_outputs(
             else:
                 # Generate unique integer values
                 outputs[col] = range(len(outputs))
-                print(f"Warming: Generated unique integer values for column '{col}'"
-                      "as it was not found in test data")
-    
+                print(
+                    f"Warming: Generated unique integer values for column '{col}'"
+                    "as it was not found in test data"
+                )
+
     # Ensure columns are in the correct order
     outputs = outputs[task.output_columns]
-    
+
     return outputs
 
 
@@ -109,6 +112,14 @@ def run_assistant(
         Optional[str],
         typer.Option("--presets", "-p", help="Presets"),
     ] = None,
+    description: Annotated[
+        str,
+        typer.Option(
+            "--description",
+            "-d",
+            help="Description of the task. If not provided, will be inferred from task files.",
+        ),
+    ] = "",
     config_path: Annotated[
         Optional[str],
         typer.Option(
@@ -149,57 +160,68 @@ def run_assistant(
 
         rprint("Will use task config:")
         rprint(OmegaConf.to_container(config))
-        
+
         task_path = Path(task_path).resolve()
-        assert task_path.is_dir(), "Task path does not exist, please provide a valid directory."
+        assert task_path.is_dir(), (
+            "Task path does not exist, please provide a valid directory."
+        )
         rprint(f"Task path: {task_path}")
-        
-        task = PredictionTask.from_path(task_path)
-        
+
+        # try:
+        task = PredictionTask.from_path(task_path, description=description)
         rprint("[green]Task loaded![/green]")
         rprint(task)
-        
+        # except Exception as e:
+        #     rprint(f"[red]Error loading task: {str(e)}[/red]")
+        #     rprint("[yellow]Please check that your task directory contains the required files.[/yellow]")
+        #     rprint("[yellow]Task directory structure should contain training and test data files.[/yellow]")
+        #     return ""
+
         assistant = PredictionAssistant(config)
-        
+
     with time_block("preprocessing task", timer):
         task = assistant.preprocess_task(task)
-    
+
     with time_block("training model", timer):
         rprint("Model training starts...")
-        
+
         assistant.fit_predictor(task, time_limit=timer.time_remaining)
-        
+
         rprint("[green]Model training complete![/green]")
-    
+
     with time_block("making predictions", timer):
         rprint("Prediction starts...")
-        
+
         predictions = assistant.predict(task)
-        
+
         if not output_filename:
-            output_filename = f"fedotllm-{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            output_filename = (
+                f"fedotllm-{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
         with open(output_filename, "w") as fp:
             make_prediction_outputs(task, predictions).to_csv(fp, index=False)
-        
-        rprint(f"[green] Prediction complete! Outputs written to {output_filename}[/green]")
-        
+
+        rprint(
+            f"[green] Prediction complete! Outputs written to {output_filename}[/green]"
+        )
+
     if config.save_artifacts.enabled:
         artifacts_dir_name = f"{task.metadata['name']}_artifacts"
         if config.save_artifacts.append_timestamp:
             current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            artifacts_dir_name = f"{task.metadata['name']}_artifacts_{current_timestamp}"
-        
+            artifacts_dir_name = (
+                f"{task.metadata['name']}_artifacts_{current_timestamp}"
+            )
+
         full_save_path = Path(config.save_artifacts.path) / artifacts_dir_name
-        
-        task.save_artifacts(
-            full_save_path, assistant.predictor
+
+        task.save_artifacts(full_save_path, assistant.predictor)
+
+        rprint(
+            f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}"
         )
-        
-        rprint(f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}")
-    
+
     return output_filename
-        
-        
 
 
 def main():

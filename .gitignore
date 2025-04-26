@@ -5,3 +5,5 @@ examples/
 test*
 .env
 fedotllm-*
+sessions/
+frontend/
