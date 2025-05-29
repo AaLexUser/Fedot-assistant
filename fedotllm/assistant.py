@@ -5,7 +5,8 @@ from .predictor import (
     FedotMultiModalPredictor,
     AutogluonTabularPredictor,
     AutogluonMultimodalPredictor,
-    AutogluonTimeSeriesPredictor
+    AutogluonTimeSeriesPredictor,
+    FedotIndustrialTimeSeriesPredictor
 )
 from .task import PredictionTask
 from .utils import get_feature_transformers_config
@@ -161,6 +162,12 @@ class PredictionAssistant:
                         self.predictor = FedotMultiModalPredictor(self.config.automl.fedot)
                     case _:
                         raise ValueError(f"Fedot doesn't support {task.task_type} tasks")
+            case "fedot_ind":
+                match task.task_type:
+                    case "time_series":
+                        self.predictor = FedotIndustrialTimeSeriesPredictor(self.config.automl.fedot_ind)
+                    case _:
+                        raise ValueError(f"Fedot.Industrial doesn't support {task.task_type} tasks")
             case "autogluon":
                 match task.task_type:
                     case "tabular":
@@ -174,7 +181,7 @@ class PredictionAssistant:
             case _:
                 raise ValueError("Unknown automl framework: {self.config.automl.enabled}")
         try:
-            if self.config.automl.enabled == "fedot":
+            if self.config.automl.enabled in ["fedot", "fedot_ind"]:
                 time_limit = time_limit / 60
             self.predictor.fit(task, time_limit=time_limit)
         except Exception as e:
