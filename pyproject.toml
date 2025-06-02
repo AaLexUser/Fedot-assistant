@@ -14,6 +14,7 @@ autogluon-tabular = {extras = ["all"], version = ">=1.2,<2.0"}
 openai = ">=1.65.3,<2.0.0"
 tenacity = ">=9.0.0,<10.0.0"
 fedot = ">=0.7.5,<0.8.0"
+fedot-ind = { git = "https://github.com/aimclub/Fedot.Industrial.git" }
 autogluon = ">=1.2,<2.0"
 # Not used in Fedot Assistant but needed for fedot
 giotto-tda = ">=0.6.0,<0.7.0"
