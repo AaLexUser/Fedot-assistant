@@ -1,7 +1,9 @@
 AutogluonModels/
 competitions/
 __pycache__
-examples/
 test*
 .env
 fedotllm-*
+.venv
+.mypy_cache
+.DS_Store
