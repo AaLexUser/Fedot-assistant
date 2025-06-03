@@ -47,7 +47,7 @@ export FEDOTLLM_LLM_API_KEY="your-api-key-here"
 
 ### Configuration Options
 
-The system uses YAML configuration files you can customize. The default configuration is located at `fedotllm/config/default.yaml`. You can create your own configuration file and specify it using the `--config-path` option.
+The system uses YAML configuration files you can customize. The default configuration is located at `fedotllm/configs/default.yaml`. You can create your own configuration file and specify it using the `--config-path` option.
 
 ## 🚀 Quick Start
 
