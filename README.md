@@ -1,4 +1,9 @@
 # FEDOT.ASSISTANT
+
+<p align="center">
+  <img src="./docs/FEDOT-ASSISTANT-logo.svg" width="600" alt="FEDOT.ASSISTANT logo">
+</p>
+
 [![Acknowledgement ITMO](https://raw.githubusercontent.com/aimclub/open-source-ops/43bb283758b43d75ec1df0a6bb4ae3eb20066323/badges/ITMO_badge.svg)](https://itmo.ru/)
 ![Python](https://img.shields.io/badge/python-3.10-blue.svg)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/AaLexUser/Fedot-assistant)
@@ -13,14 +18,14 @@ FEDOT.ASSISTANT is an LLM-based prototype for next-generation AutoML. It combine
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-1. Clone the repository:
+2. Clone the repository:
 
 ```bash
 git clone https://github.com/AaLexUser/Fedot-assistant.git
 cd Fedot-assistant
 ```
 
-1. Create a new virtual environment and activate it:
+3. Create a new virtual environment and activate it:
 
 ```bash
 uv venv --python 3.10
@@ -29,7 +34,7 @@ source .venv/bin/activate  # On Unix/macOS
 # .venv\Scripts\activate
 ```
 
-1. Install dependencies:
+4. Install dependencies:
 
 ```bash
 uv sync
