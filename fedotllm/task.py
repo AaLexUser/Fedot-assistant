@@ -70,7 +70,7 @@ class PredictionTask:
         }
 
     def __repr__(self) -> str:
-        return f"TabularPredictionTask(name={self.metadata['name']}, description={self.metadata['description'][:100]}, {len(self.dataset_mapping)} datasets)"
+        return f"PredictionTask(name={self.metadata['name']}, description={self.metadata['description'][:100]}, {len(self.dataset_mapping)} datasets)"
 
     @classmethod
     def from_path(
