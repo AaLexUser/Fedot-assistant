@@ -1,10 +1,14 @@
 import os
 import logging
-import openai
 from typing import List, Dict, Any
 from omegaconf import DictConfig
 import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
+from langfuse.openai import openai
+from langfuse.decorators import observe
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +24,13 @@ class AssistantChatOpenAI:
         self.temperature = config.get("temperature", 0)
         self.max_tokens = config.get("max_tokens", 512)
 
-        if "OPENAI_API_KEY" in os.environ:
-            api_key = os.environ["OPENAI_API_KEY"]
+        if "FEDOTLLM_LLM_API_KEY" in os.environ:
+            api_key = os.environ["FEDOTLLM_LLM_API_KEY"]
         else:
-            raise Exception("OpenAI API env variable OPENAI_API_KEY not set")
+            raise Exception("OpenAI API env variable FEDOTLLM_LLM_API_KEY not set")
 
         logger.info(
-            f"FedotLLM is using model {config.model} from OpenAI to assist you with the task."
+            f"FedotLLM is using model {config.model} to assist you with the task."
         )
 
         self.client = openai.OpenAI(
@@ -44,6 +48,7 @@ class AssistantChatOpenAI:
         }
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @observe()
     def invoke(self, messages: List[Dict[str, str]]):
         response = self.client.chat.completions.create(
             messages=messages,
