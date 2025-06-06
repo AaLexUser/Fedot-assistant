@@ -95,7 +95,7 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             "predictor_init_kwargs": predictor_init_kwargs,
         }
 
-        input_data = self.prepare_industrial_data()
+        input_data = self.prepare_industrial_data(task, is_for_forecast=False)
         self.predictor = FedotIndustrial(**predictor_init_kwargs)
         self.predictor.fit(input_data)
         self.predictor.shutdown()
