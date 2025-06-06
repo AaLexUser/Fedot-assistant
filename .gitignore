@@ -4,4 +4,7 @@ __pycache__
 test*
 .env
 fedotllm-*
+.venv
+.mypy_cache
+.DS_Store
 *.lock
