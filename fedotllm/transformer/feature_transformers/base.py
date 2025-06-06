@@ -1,6 +1,6 @@
 from ..base import BaseTransformer, TransformTimeoutError
 import pandas as pd
-from fedotllm.task import TabularPredictionTask
+from fedotllm.task import PredictionTask
 import logging
 import traceback
 from typing import Tuple
@@ -15,7 +15,7 @@ class BaseFeatureTransformer(BaseTransformer):
     def _fit_dataframes(self, train_X: pd.DataFrame, train_y: pd.Series, **kwargs) -> None:
         raise NotImplementedError
     
-    def fit(self, task: TabularPredictionTask) -> "BaseFeatureTransformer":
+    def fit(self, task: PredictionTask, *args, **kwargs) -> "BaseFeatureTransformer":
         try:
             train_x = task.train_data.drop(
                 columns=task.columns_in_train_but_not_test + [task.train_id_column],
@@ -41,7 +41,7 @@ class BaseFeatureTransformer(BaseTransformer):
     def _transform_dataframes(self, train_X: pd.DataFrame, test_X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         raise NotImplementedError
     
-    def transform(self, task: TabularPredictionTask) -> TabularPredictionTask:
+    def transform(self, task: PredictionTask, *args, **kwargs) -> PredictionTask:
         try:
             train_x = task.train_data.drop(
                 columns=task.columns_in_train_but_not_test + [task.train_id_column],
