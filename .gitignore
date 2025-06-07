@@ -7,3 +7,4 @@ fedotllm-*
 .venv
 .mypy_cache
 .DS_Store
+*.lock
