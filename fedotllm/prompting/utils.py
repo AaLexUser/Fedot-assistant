@@ -1,17 +1,22 @@
-from typing import Optional, Dict, Any, Iterable
+import difflib
 import json
 import logging
 import re
-import difflib
+from typing import Any, Dict, Iterable, Optional
+
+import json_repair
+
 from ..exceptions import OutputParserException
-import logging
 
 logger = logging.getLogger(__name__)
 
 def parse_json(raw_reply: str) -> Optional[Dict[str, Any]]:
-    def try_json_loads(data: str) -> Dict[str, Any]:
+    def try_json_loads(data: str) -> Dict[str, Any] | None:
         try:
-            return json.loads(data)
+            repaired_json = json_repair.repair_json(
+                data, ensure_ascii=False, return_objects=True
+            )
+            return repaired_json if repaired_json != "" else None
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error: {e}")
             return None

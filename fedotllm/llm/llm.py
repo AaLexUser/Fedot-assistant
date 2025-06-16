@@ -7,6 +7,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from langfuse.openai import openai
 from langfuse.decorators import observe
 from dotenv import load_dotenv
+from fedotllm.utils.configs import load_config
 
 load_dotenv()
 
@@ -69,3 +70,16 @@ class AssistantChatOpenAI:
             }
         )
         return response.choices[0].message.content
+    
+if __name__ == "__main__":
+    config = load_config()
+    
+    assistant = AssistantChatOpenAI(config.llm)
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of Russia?"}
+    ]
+    
+    response = assistant.invoke(messages)
+    print("Response:", response)
+    print("History:", assistant.describe())

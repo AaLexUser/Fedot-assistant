@@ -103,7 +103,7 @@ def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, A
     
 
 def load_config(
-    presets: str,
+    presets: str = "default",
     config_path: Optional[str] = None,
     overrides: Optional[List[str]] = None,
 ) -> Dict[str, Any]:

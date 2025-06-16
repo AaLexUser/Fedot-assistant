@@ -6,13 +6,11 @@ build-backend = "hatchling.build"
 name = "fedotllm"
 version = "0.1.0"
 description = "Description of the project"
-authors = [
-    {name = "Alexey Lapin", email = "a.lapin@itmo.ru"}
-]
+authors = [{ name = "Alexey Lapin", email = "a.lapin@itmo.ru" }]
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    "typer>=0.15.2,<0.16.0",
+    "typer>=0.3.0,<0.16.0",
     "hydra-core>=1.3.2,<2.0.0",
     "rich>=13.9.4,<14.0.0",
     "autogluon-tabular[all]>=1.2,<2.0",
@@ -28,12 +26,22 @@ dependencies = [
     "tensorflow>=2.18.0,<3.0.0",
     "langfuse>=2.60.7,<3.0.0",
     "python-dotenv>=1.1.0",
+    "nbformat>=4.2.0",
+    "dask-expr>=1.0.0,<2.0.0",
+    "fedot-ind",
+    "json-repair>=0.46.2",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "ruff>=0.9.9",
-]
+dev = ["ruff>=0.9.9"]
 
 [project.scripts]
 fedotllm = "fedotllm:main"
+
+[tool.uv.sources]
+fedot-ind = { git = "https://github.com/aimclub/Fedot.Industrial.git" }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11.13",
+]
