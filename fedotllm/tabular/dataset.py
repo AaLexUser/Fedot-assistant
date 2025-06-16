@@ -1,11 +1,9 @@
 import pandas as pd
 from pathlib import Path
 from typing import TypeAlias
-from .constants import (
-    CSV_SUFFIXES,
-    PARQUET_SUFFIXES,
-    EXCEL_SUFFIXES
-)
+from .constants import CSV_SUFFIXES, PARQUET_SUFFIXES, EXCEL_SUFFIXES
+
+
 def load_pd(data):
     if isinstance(data, (Path, str)):
         path = data
@@ -20,7 +18,7 @@ def load_pd(data):
             format = "csv"
         else:
             raise Exception("file format " + format + " not supported!")
-        
+
         match format:
             case "excel":
                 return pd.read_excel(path, engine="calamine")
@@ -33,7 +31,6 @@ def load_pd(data):
                 return pd.read_csv(path)
     else:
         return pd.DataFrame(data)
-    
+
 
 TabularDataset: TypeAlias = pd.DataFrame
-    

@@ -3,10 +3,11 @@ from typing import Any, Dict, Optional
 from collections import defaultdict
 from fedot.api.main import Fedot
 from fedot.core.data.multi_modal import MultiModalData
-from fedot.core.data.data_detection import TextDataDetector
-from fedot.core.data.data import InputData, array_to_input_data
-from fedot.core.constants import DEFAULT_FORECAST_LENGTH
-from fedot.core.repository.tasks import Task, TaskTypesEnum, TaskParams, TsForecastingParams
+from fedot.core.data.data import InputData
+from fedot.core.repository.tasks import (
+    Task,
+    TaskTypesEnum,
+)
 from fedot.core.repository.dataset_types import DataTypesEnum
 from ..task import PredictionTask
 from ..utils import unpack_omega_config
@@ -17,7 +18,6 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import logging
-from functools import partial
 
 from ..constants import (
     ROC_AUC,
@@ -31,7 +31,7 @@ from ..constants import (
     BINARY,
     MULTICLASS,
     REGRESSION,
-    CLASSIFICATION_PROBA_EVAL_METRIC
+    CLASSIFICATION_PROBA_EVAL_METRIC,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,46 +44,49 @@ METRICS_TO_FEDOT = {
     ROOT_MEAN_SQUARED_ERROR: "rmse",
     MEAN_SQUARED_ERROR: "mse",
     MEAN_ABSOLUTE_ERROR: "mae",
-    R2: "r2"
+    R2: "r2",
 }
 
 PROBLEM_TO_FEDOT = {
     BINARY: "classification",
     MULTICLASS: "classification",
-    REGRESSION: "regression"
+    REGRESSION: "regression",
 }
 
-#TODO: choose targer_size more reasonably
+
+# TODO: choose targer_size more reasonably
 def _load_images_from_dataframe(df, image_column, target_size=(128, 128)):
-        images = []
-        for image_path in tqdm(df[image_column], desc="Loading images"):
-            img = Image.open(image_path)
-            img = img.resize(target_size)
-            img_array = np.array(img)
-            img_array = img_array.astype(np.float32) / sum(target_size) - 1  # Normalization
-            
-            # Ensure the image has 3 channels (RGB)
-            if len(img_array.shape) == 2:  # Grayscale image
-                img_array = np.stack((img_array,) * 3, axis=-1)  # Convert to 3 channels
-            elif img_array.shape[2] == 4:  # RGBA image
-                img_array = img_array[:, :, :3]  # Drop the alpha channel
-            images.append(img_array)
-        
-        images_array = np.array(images)
-        return images_array
-    
+    images = []
+    for image_path in tqdm(df[image_column], desc="Loading images"):
+        img = Image.open(image_path)
+        img = img.resize(target_size)
+        img_array = np.array(img)
+        img_array = img_array.astype(np.float32) / sum(target_size) - 1  # Normalization
+
+        # Ensure the image has 3 channels (RGB)
+        if len(img_array.shape) == 2:  # Grayscale image
+            img_array = np.stack((img_array,) * 3, axis=-1)  # Convert to 3 channels
+        elif img_array.shape[2] == 4:  # RGBA image
+            img_array = img_array[:, :, :3]  # Drop the alpha channel
+        images.append(img_array)
+
+    images_array = np.array(images)
+    return images_array
+
+
 def prepare_multi_model_data(
     data: pd.DataFrame,
     task: PredictionTask,
 ) -> MultiModalData:
-        
     task_problem_type = Task(TaskTypesEnum(PROBLEM_TO_FEDOT[task.problem_type]))
     sources = {}
-    
+
     table_features = data.copy()
-    target = (data[task.label_column].to_numpy()
-              if task.label_column in data.columns
-              else None)
+    target = (
+        data[task.label_column].to_numpy()
+        if task.label_column in data.columns
+        else None
+    )
     if target is not None:
         table_features = table_features.drop(task.label_column, axis=1)
 
@@ -92,7 +95,7 @@ def prepare_multi_model_data(
         data_img = InputData.from_image(
             images=_load_images_from_dataframe(data, task.images_column),
             labels=target,
-            task=task_problem_type
+            task=task_problem_type,
         )
         table_features = table_features.drop(task.images_column, axis=1)
         sources.update({"data_source_img": data_img})
@@ -105,7 +108,7 @@ def prepare_multi_model_data(
             target=target,
             task=task_problem_type,
             data_type=DataTypesEnum.text,
-            features_names=data[task.text_columns].columns.to_numpy()
+            features_names=data[task.text_columns].columns.to_numpy(),
         )
         table_features = table_features.drop(task.text_columns, axis=1)
         sources.update({"data_source_text": data_text})
@@ -118,12 +121,13 @@ def prepare_multi_model_data(
             target=target,
             task=task_problem_type,
             data_type=DataTypesEnum.table,
-            features_names=table_features.columns.to_numpy()
+            features_names=table_features.columns.to_numpy(),
         )
 
         sources.update({"data_source_table": data_table})
-    
+
     return MultiModalData(sources)
+
 
 class FedotTabularPredictor(Predictor):
     def __init__(self, config: Any):
@@ -131,108 +135,119 @@ class FedotTabularPredictor(Predictor):
         self.metadata: Dict[str, Any] = defaultdict(dict)
         self.predictor: Fedot = None
         self.problem_type: str = None
-    
-    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "FedotTabularPredictor":
+
+    def fit(
+        self, task: PredictionTask, time_limit: Optional[float] = None
+    ) -> "FedotTabularPredictor":
         eval_metric = task.eval_metric
         self.problem_type = task.problem_type
-        
+
         predictor_init_kwargs = {
             "problem": PROBLEM_TO_FEDOT[task.problem_type],
             "timeout": time_limit,
-            "metric": METRICS_TO_FEDOT[eval_metric], 
-            **unpack_omega_config(self.config.predictor_init_kwargs)  
+            "metric": METRICS_TO_FEDOT[eval_metric],
+            **unpack_omega_config(self.config.predictor_init_kwargs),
         }
-        
+
         predictor_fit_kwargs = self.config.predictor_fit_kwargs
-        
+
         logger.info("Fitting Fedot TabularPredictor")
         logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
         logger.info(f"predictor_fit_kwargs: {predictor_fit_kwargs}")
-        
+
         self.metadata |= {
             "predictor_init_kwargs": predictor_init_kwargs,
-            "predictor_fit_kwargs": predictor_fit_kwargs
+            "predictor_fit_kwargs": predictor_fit_kwargs,
         }
-        
+
         self.predictor = Fedot(**predictor_init_kwargs)
         self.predictor.fit(
-            task.train_data, task.label_column, **unpack_omega_config(predictor_fit_kwargs)
+            task.train_data,
+            task.label_column,
+            **unpack_omega_config(predictor_fit_kwargs),
         )
-        
-        self.metadata['graph_structure'] = graph_structure(self.predictor.current_pipeline)
+
+        self.metadata["graph_structure"] = graph_structure(
+            self.predictor.current_pipeline
+        )
         return self
-    
+
     def predict(self, task: PredictionTask) -> TabularDataset:
-        if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [
-            BINARY,
-            MULTICLASS
-        ]:
-            predictions = self.predictor.predict_proba(
-                task.test_data
-            )
+        if (
+            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
+            and self.problem_type in [BINARY, MULTICLASS]
+        ):
+            predictions = self.predictor.predict_proba(task.test_data)
         else:
             predictions = self.predictor.predict(task.test_data)
         return pd.DataFrame(predictions, columns=[task.label_column])
-        
+
     def save_artifacts(self, path: str):
         self.predictor.current_pipeline.save(path)
-        
+
+
 class FedotMultiModalPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
         self.predictor: Fedot = None
-        self.problem_type: str = None     
-        
-    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "FedotMultiModalPredictor":
+        self.problem_type: str = None
+
+    def fit(
+        self, task: PredictionTask, time_limit: Optional[float] = None
+    ) -> "FedotMultiModalPredictor":
         eval_metric = task.eval_metric
         self.problem_type = task.problem_type
-                
+
         predictor_init_kwargs = {
             "problem": PROBLEM_TO_FEDOT[task.problem_type],
             "timeout": time_limit,
-            "metric": METRICS_TO_FEDOT[eval_metric], 
-            **unpack_omega_config(self.config.predictor_init_kwargs)  
+            "metric": METRICS_TO_FEDOT[eval_metric],
+            **unpack_omega_config(self.config.predictor_init_kwargs),
         }
-        
+
         train_data = prepare_multi_model_data(task.train_data, task)
-        
+
         predictor_fit_kwargs = self.config.predictor_fit_kwargs
-        
+
         logger.info("Fitting Fedot TabularPredictor")
         logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
         logger.info(f"predictor_fit_kwargs: {predictor_fit_kwargs}")
-        
+
         self.metadata |= {
             "predictor_init_kwargs": predictor_init_kwargs,
-            "predictor_fit_kwargs": predictor_fit_kwargs
+            "predictor_fit_kwargs": predictor_fit_kwargs,
         }
-        
+
         self.predictor = Fedot(**predictor_init_kwargs)
         self.predictor.fit(
             train_data, task.label_column, **unpack_omega_config(predictor_fit_kwargs)
         )
-        
-        self.metadata['graph_structure'] = graph_structure(self.predictor.current_pipeline)
+
+        self.metadata["graph_structure"] = graph_structure(
+            self.predictor.current_pipeline
+        )
         return self
-    
+
     def predict(self, task: PredictionTask) -> TabularDataset:
-        test_data = (task.test_data.drop(task.label_column, axis=1)
-                if task.label_column in task.test_data
-                else task.test_data)
-            
+        test_data = (
+            task.test_data.drop(task.label_column, axis=1)
+            if task.label_column in task.test_data
+            else task.test_data
+        )
+
         test_data = prepare_multi_model_data(test_data, task)
-        
-        if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [
-            BINARY,
-            MULTICLASS
-        ]:
-            predictions = self.predictor.predict_proba(
-                test_data
-            )
+
+        if (
+            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
+            and self.problem_type in [BINARY, MULTICLASS]
+        ):
+            predictions = self.predictor.predict_proba(test_data)
         else:
             predictions = self.predictor.predict(test_data)
-        return pd.DataFrame(predictions, columns=[task.label_column], index=task.test_data.index)
-        
+        return pd.DataFrame(
+            predictions, columns=[task.label_column], index=task.test_data.index
+        )
+
     def save_artifacts(self, path: str):
         self.predictor.current_pipeline.save(path)
