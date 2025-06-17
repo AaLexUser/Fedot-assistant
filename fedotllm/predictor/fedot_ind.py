@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import psutil
+import torch
 from fedot.core.pipelines.pipeline import Pipeline
 from fedot_ind.api.utils.api_init import ApiManager
 from fedot_ind.api.utils.checkers_collections import ApiConfigCheck
@@ -72,6 +74,7 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
         self.predictor: Optional[FedotIndustrial] = None
         self.problem_type: Optional[str] = None
         self.eval_metric: Optional[str] = None
+        self.historical_data: Optional[np.ndarray] = None
 
     def fit(
         self, task: PredictionTask, time_limit: Optional[float] = None
@@ -86,6 +89,9 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             "metric": METRICS_TO_FEDOT_IND[self.eval_metric],
             "quality_loss": METRICS_TO_FEDOT_IND[self.eval_metric],
             "forecast_length": task.forecast_horizon,
+            "with_tuning": True,
+            "tuning_timeout": time_limit,
+            **configure_dask_cluster(),
             **unpack_omega_config(self.config.predictor_init_kwargs),
         }
 
@@ -116,8 +122,13 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
             and self.problem_type in [BINARY, MULTICLASS]
         ):
-            return TabularDataset(self.predictor.predict_proba(input_data))
-        return TabularDataset(self.predictor.predict(input_data))
+            predictions = self.predictor.predict_proba(input_data)
+        else:
+            predictions = self.predictor.predict(input_data)
+
+        return TabularDataset(
+            predictions, columns=[task.label_column], index=task.test_data.index
+        )
 
     def save_artifacts(self, path: str) -> None:
         self.get_current_pipeline(self.predictor.manager).save(path)
@@ -128,17 +139,40 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             return manager.solver.current_pipeline
         return manager.solver
 
-    @staticmethod
     def prepare_industrial_data(
-        task: PredictionTask, is_for_forecast: Optional[bool] = False
+        self, task: PredictionTask, is_for_forecast: Optional[bool] = False
     ) -> tuple[np.ndarray, np.ndarray]:
         data = task.test_data if is_for_forecast else task.train_data
+
         timestamp_col = task.timestamp_column
         if timestamp_col and timestamp_col in data.columns:
             # Convert to datetime and set as index
             data[timestamp_col] = pd.to_datetime(data[timestamp_col])
             data = data.set_index(timestamp_col)
-        series = data.to_numpy()
+        series = data.to_numpy().squeeze()
+
         if is_for_forecast:
-            return series, series
+            return self.historical_data, series
+
+        self.historical_data = series
         return series, series[-task.forecast_horizon :]
+
+
+def configure_dask_cluster():
+    logical_cores = psutil.cpu_count()
+    cuda_available = torch.cuda.is_available()
+    gpu_count = torch.cuda.device_count() if cuda_available else 0
+
+    if cuda_available:
+        # GPU workload: 1 worker per GPU, balance threads
+        n_workers = min(gpu_count, 4)  # Cap at 4 workers to avoid over-subscription
+        threads_per_worker = max(logical_cores // n_workers, 1)
+    else:
+        n_workers = max(logical_cores // 2, 1)  # Max parallelism for small machines
+        threads_per_worker = 2  # Avoid GIL for CPU-bound tasks
+
+    return {
+        "n_workers": n_workers,
+        "threads_per_worker": threads_per_worker,
+        "memory_limit": "auto",
+    }
