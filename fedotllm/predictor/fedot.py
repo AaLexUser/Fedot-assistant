@@ -4,10 +4,7 @@ from collections import defaultdict
 from fedot.api.main import Fedot
 from fedot.core.data.multi_modal import MultiModalData
 from fedot.core.data.data import InputData
-from fedot.core.repository.tasks import (
-    Task,
-    TaskTypesEnum,
-)
+from fedot.core.repository.tasks import Task, TaskTypesEnum, TsForecastingParams
 from fedot.core.repository.dataset_types import DataTypesEnum
 from ..task import PredictionTask
 from ..utils import unpack_omega_config
@@ -31,6 +28,7 @@ from ..constants import (
     BINARY,
     MULTICLASS,
     REGRESSION,
+    TIME_SERIES,
     CLASSIFICATION_PROBA_EVAL_METRIC,
 )
 
@@ -51,6 +49,7 @@ PROBLEM_TO_FEDOT = {
     BINARY: "classification",
     MULTICLASS: "classification",
     REGRESSION: "regression",
+    TIME_SERIES: "ts_forecasting",
 }
 
 
@@ -251,3 +250,81 @@ class FedotMultiModalPredictor(Predictor):
 
     def save_artifacts(self, path: str):
         self.predictor.current_pipeline.save(path)
+
+
+class FedotTimeSeriesPredictor(Predictor):
+    def __init__(self, config: Any):
+        self.config = config
+        self.metadata: Dict[str, Any] = defaultdict(dict)
+        self.predictor: Optional[Fedot] = None
+        self.problem_type: Optional[str] = None
+        self.eval_metric: Optional[str] = None
+        self.historical_data: Optional[np.ndarray] = None
+
+    def fit(
+        self, task: PredictionTask, time_limit: Optional[float] = None
+    ) -> "FedotTimeSeriesPredictor":
+        self.eval_metric = task.eval_metric
+        self.problem_type = task.problem_type
+
+        predictor_init_kwargs = {
+            "problem": PROBLEM_TO_FEDOT[self.problem_type],
+            "timeout": time_limit,
+            "metric": METRICS_TO_FEDOT[self.eval_metric],
+            "task_params": TsForecastingParams(forecast_length=task.forecast_horizon),
+            **unpack_omega_config(self.config.predictor_init_kwargs),
+        }
+
+        logger.info("Fitting Fedot TimeseriesPredictor")
+        logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
+        self.metadata |= {
+            "predictor_init_kwargs": predictor_init_kwargs,
+        }
+
+        input_data = self.prepare_data(task, is_for_forecast=False)
+        self.predictor = Fedot(**predictor_init_kwargs)
+        self.predictor.fit(input_data)
+
+        self.metadata["graph_structure"] = graph_structure(
+            self.predictor.current_pipeline
+        )
+        return self
+
+    def predict(self, task: PredictionTask) -> TabularDataset:
+        input_data = self.prepare_data(task, is_for_forecast=True)
+        if (
+            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
+            and self.problem_type in [BINARY, MULTICLASS]
+        ):
+            return pd.DataFrame(
+                self.predictor.predict_proba(input_data),
+                columns=[task.label_column],
+                index=task.test_data.index,
+            )
+
+        return pd.DataFrame(
+            self.predictor.predict(input_data),
+            columns=[task.label_column],
+            index=task.test_data.index,
+        )
+
+    def save_artifacts(self, path: str) -> None:
+        self.predictor.current_pipeline.save(path)
+
+    def prepare_data(
+        self, task: PredictionTask, is_for_forecast: Optional[bool] = False
+    ) -> np.ndarray:
+        data = task.test_data if is_for_forecast else task.train_data
+
+        timestamp_col = task.timestamp_column
+        if timestamp_col and timestamp_col in data.columns:
+            # Convert to datetime and set as index
+            data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+            data = data.set_index(timestamp_col)
+        series = data.to_numpy().squeeze()
+
+        if is_for_forecast:
+            return self.historical_data
+
+        self.historical_data = series
+        return series

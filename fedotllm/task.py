@@ -99,7 +99,7 @@ class PredictionTask:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:
             raise ValueError(
-                f"Dataset type {dataset_key} not found for task {self.name}"
+                f"Dataset type {dataset_key} not found for task {self.metadata.get('name', 'Unknown')}"
             )
 
         dataset = self.dataset_mapping[dataset_key]

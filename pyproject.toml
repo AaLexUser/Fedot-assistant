@@ -30,6 +30,8 @@ dependencies = [
     "dask-expr>=1.0.0,<2.0.0",
     "fedot-ind",
     "json-repair>=0.46.2",
+    "tf-keras>=2.19.0",
+    "jupyter>=1.1.1",
 ]
 
 [project.optional-dependencies]

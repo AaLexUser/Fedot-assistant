@@ -5,6 +5,7 @@ import joblib
 import shutil
 from collections import defaultdict
 from typing import Any, Dict
+import pandas as pd
 
 from autogluon.tabular import TabularPredictor
 from autogluon.multimodal import MultiModalPredictor
@@ -235,21 +236,33 @@ class AutogluonTimeSeriesPredictor(Predictor):
         self.predictor: MultiModalPredictor = None
 
     def fit(self, task, time_limit=None):
-        """Trains an AutoGluon TimeSeriesPredictor with parsed arguments. Saves trained predictor
-        to `self.predictor`
+        """Trains an AutoGluon TimeSeriesPredictor with parsed arguments.
+
+        Parameters
+        ----------
+        task : PredictionTask
+            Task containing training data and metadata
+        time_limit : float, optional
+            Time limit for training in seconds
+
+        Returns
+        -------
+        self : AutogluonTimeSeriesPredictor
+            Fitted predictor instance
 
         Raises
         ------
-        Exception
-            TimeSeries fit failures
+        ValueError
+            If required columns are missing from training data
         """
         eval_metric = task.eval_metric
         if eval_metric == ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR:
             eval_metric = root_mean_square_logarithmic_error
+        train_data_prepared, freq_str = self._prepare_time_series_data(task)
 
         train_data = TimeSeriesDataFrame.from_data_frame(
-            task.train_data,
-            id_column=task.train_id_column,
+            train_data_prepared["data"],
+            id_column=train_data_prepared["id_column"],
             timestamp_column=task.timestamp_column,
             static_features_df=task.static_features_data,
         )
@@ -258,20 +271,18 @@ class AutogluonTimeSeriesPredictor(Predictor):
             "target": task.label_column,
             "prediction_length": task.forecast_horizon,
             "eval_metric": METRIC_TO_TIMESERIES[eval_metric],
+            "freq": freq_str,
             **unpack_omega_config(self.config.predictor_init_kwargs),
         }
-
         predictor_fit_kwargs = self.config.predictor_fit_kwargs.copy()
         predictor_fit_kwargs.pop("time_limit", None)
-
-        logger.info("Fitting AutoGluon TimeseriesPredictor")
-        logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
-        logger.info(f"predictor_fit_kwargs: {predictor_fit_kwargs}")
 
         self.metadata |= {
             "predictor_init_kwargs": predictor_init_kwargs,
             "predictor_fit_kwargs": predictor_fit_kwargs,
         }
+
+        logger.info("Fitting AutoGluon TimeSeriesPredictor")
 
         self.predictor = TimeSeriesPredictor(**predictor_init_kwargs).fit(
             train_data,
@@ -280,6 +291,57 @@ class AutogluonTimeSeriesPredictor(Predictor):
         )
 
         return self
+
+    def _prepare_time_series_data(self, task):
+        """Prepare time series data for AutoGluon training.
+
+        Handles univariate series by adding item_id column and infers frequency
+        from timestamp data for irregular time series.
+
+        Returns
+        -------
+        dict
+            Dictionary with 'data' and 'id_column' keys
+        str
+            Frequency string for AutoGluon
+        """
+        if task.train_id_column and task.train_id_column not in task.train_data.columns:
+            raise ValueError(
+                f"train_id_column '{task.train_id_column}' not found in training data"
+            )
+
+        # Handle univariate time series
+        if task.train_id_column is None:
+            train_data_copy = task.train_data.copy()
+            train_data_copy["item_id"] = "series_1"
+            id_column_to_use = "item_id"
+        else:
+            train_data_copy = task.train_data.copy()
+            id_column_to_use = task.train_id_column
+
+        # Infer frequency from timestamps
+        freq_str = self._infer_frequency(train_data_copy, task.timestamp_column)
+
+        return {"data": train_data_copy, "id_column": id_column_to_use}, freq_str
+
+    def _infer_frequency(self, data, timestamp_column):
+        """Infer frequency from timestamp data and convert to AutoGluon format."""
+        data[timestamp_column] = pd.to_datetime(data[timestamp_column])
+        time_diffs = data[timestamp_column].diff().dropna()
+
+        if len(time_diffs.mode()) == 0:
+            return "H"  # Default to hourly
+
+        most_common_freq = time_diffs.mode().iloc[0]
+
+        # Map common frequencies to AutoGluon format
+        freq_mapping = {
+            pd.Timedelta(hours=1): "H",
+            pd.Timedelta(minutes=30): "30min",
+            pd.Timedelta(days=1): "D",
+        }
+
+        return freq_mapping.get(most_common_freq, "H")
 
     def predict(self, task: PredictionTask) -> TabularDataset:
         return self.predictor.predict(task.train_data)

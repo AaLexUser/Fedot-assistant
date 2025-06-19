@@ -89,7 +89,6 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             "metric": METRICS_TO_FEDOT_IND[self.eval_metric],
             "quality_loss": METRICS_TO_FEDOT_IND[self.eval_metric],
             "forecast_length": task.forecast_horizon,
-            "with_tuning": True,
             "tuning_timeout": time_limit,
             **configure_dask_cluster(),
             **unpack_omega_config(self.config.predictor_init_kwargs),

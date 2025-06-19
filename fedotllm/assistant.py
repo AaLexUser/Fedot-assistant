@@ -3,6 +3,7 @@ from .llm import AssistantChatOpenAI
 from .predictor import (
     FedotTabularPredictor,
     FedotMultiModalPredictor,
+    FedotTimeSeriesPredictor,
     AutogluonTabularPredictor,
     AutogluonMultimodalPredictor,
     AutogluonTimeSeriesPredictor,
@@ -167,6 +168,10 @@ class PredictionAssistant:
                         self.predictor = FedotTabularPredictor(self.config.automl.fedot)
                     case "multimodal":
                         self.predictor = FedotMultiModalPredictor(
+                            self.config.automl.fedot
+                        )
+                    case "time_series":
+                        self.predictor = FedotTimeSeriesPredictor(
                             self.config.automl.fedot
                         )
                     case _:

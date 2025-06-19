@@ -25,10 +25,12 @@ automl:
   fedot:
     predictor_init_kwargs:
       preset: best_quality
+      with_tuning: True
     predictor_fit_kwargs: {}
   fedot_ind:
     predictor_init_kwargs:
       preset: best_quality
+      with_tuning: True
     predictor_fit_kwargs: { }
 llm:
   provider: openai
