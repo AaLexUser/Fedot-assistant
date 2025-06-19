@@ -11,5 +11,21 @@ from .task_inference import (
     TestIDColumnInference,
     TrainIDColumnInference,
     OutputIDColumnInference,
-    EvalMetricInference
+    EvalMetricInference,
 )
+
+__all__ = [
+    "TaskInference",
+    "DescriptionFileNameInference",
+    "DataFileNameInference",
+    "TaskTypeInference",
+    "ProblemTypeInference",
+    "LabelColumnInference",
+    "TimestampColumnInference",
+    "StaticFeaturesFileNameInference",
+    "ForecastHorizonInference",
+    "TestIDColumnInference",
+    "TrainIDColumnInference",
+    "OutputIDColumnInference",
+    "EvalMetricInference",
+]

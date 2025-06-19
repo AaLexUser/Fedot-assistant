@@ -6,3 +6,6 @@ automl:
   fedot:
     predictor_init_kwargs:
       preset: fast_train
+  fedot_ind:
+    predictor_init_kwargs:
+      preset: fast_train

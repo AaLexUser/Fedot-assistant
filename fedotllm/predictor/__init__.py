@@ -1,9 +1,23 @@
-from .fedot import (
-    FedotTabularPredictor,
-    FedotMultiModalPredictor
-)
 from .autogluon import (
-    AutogluonTabularPredictor,
     AutogluonMultimodalPredictor,
-    AutogluonTimeSeriesPredictor
+    AutogluonTabularPredictor,
+    AutogluonTimeSeriesPredictor,
 )
+from .fedot import (
+    FedotMultiModalPredictor,
+    FedotTabularPredictor,
+    FedotTimeSeriesPredictor,
+)
+from .fedot_ind import (
+    FedotIndustrialTimeSeriesPredictor,
+)
+
+__all__ = [
+    "FedotTabularPredictor",
+    "FedotMultiModalPredictor",
+    "FedotTimeSeriesPredictor",
+    "FedotIndustrialTimeSeriesPredictor",
+    "AutogluonTabularPredictor",
+    "AutogluonMultimodalPredictor",
+    "AutogluonTimeSeriesPredictor",
+]

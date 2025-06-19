@@ -71,11 +71,11 @@ def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, A
     overrides = ",".join(overrides)
     # Split by comma but preserve commas inside square brackets
     overrides = re.split(r",(?![^\[]*\])", overrides)
-    
+
     for override in overrides:
         override = override.strip()
         key, value = parse_override(override)
-        
+
         # Handle list values enclosed in square brackets
         if value.startswith("[") and value.endswith("]"):
             # Extract items between brackets and split by comma
@@ -89,21 +89,21 @@ def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, A
             except Exception:
                 # Keep as string if eval fails
                 pass
-        
+
         # Handle nested keys
         current = override_conf
         key_parts = key.split(".")
         for part in key_parts[:-1]:
             current = current.setdefault(part, {})
         current[key_parts[-1]] = value
-    
+
     # Convert override dict to OmegaConf and merge
     override_conf = OmegaConf.create(override_conf)
     return OmegaConf.merge(config, override_conf)
-    
+
 
 def load_config(
-    presets: str,
+    presets: str = "default",
     config_path: Optional[str] = None,
     overrides: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
@@ -150,7 +150,10 @@ def load_config(
 
     return config
 
-def get_feature_transformers_config(config: OmegaConf) -> Optional[List[Dict[str, Any]]]:
+
+def get_feature_transformers_config(
+    config: OmegaConf,
+) -> Optional[List[Dict[str, Any]]]:
     """
     Retrieve the configuration of feature transformers based on enabled models.
     Returns None if no models are enabled.
@@ -164,27 +167,28 @@ def get_feature_transformers_config(config: OmegaConf) -> Optional[List[Dict[str
     """
     # Get list of enabled models
     enabled_models = config.feature_transformers.enabled_models
-    
+
     # Convert string to list if single model string
     if isinstance(enabled_models, str):
         enabled_models = [enabled_models]
-        
+
     # Return None if no models are enabled
     if not enabled_models:
         return None
-    
+
     # Get all available model configurations
     all_models_config = config.feature_transformers.models
-    
+
     # Create list of configurations for enabled models
     transformers_config = [
         OmegaConf.to_container(all_models_config[model_name], resolve=True)
         for model_name in enabled_models
         if model_name in all_models_config
     ]
-    
+
     # Return None if no valid configurations were found
     return transformers_config if transformers_config else None
+
 
 def unpack_omega_config(config):
     temp_config = deepcopy(config)

@@ -7,6 +7,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from langfuse.openai import openai
 from langfuse.decorators import observe
 from dotenv import load_dotenv
+from fedotllm.utils.configs import load_config
 
 load_dotenv()
 
@@ -37,17 +38,19 @@ class AssistantChatOpenAI:
             api_key=api_key,
             base_url=self.base_url,
         )
-    
+
     def describe(self) -> Dict[str, Any]:
         return {
             "model": self.model,
             "base_url": self.base_url,
             "history": self.history_,
             "input": self.input_,
-            "output": self.output_
+            "output": self.output_,
         }
 
-    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @retry(
+        stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10)
+    )
     @observe()
     def invoke(self, messages: List[Dict[str, str]]):
         response = self.client.chat.completions.create(
@@ -59,7 +62,7 @@ class AssistantChatOpenAI:
 
         self.input_ += response.usage.prompt_tokens
         self.output_ += response.usage.completion_tokens
-        
+
         self.history_.append(
             {
                 "input": messages,
@@ -69,3 +72,17 @@ class AssistantChatOpenAI:
             }
         )
         return response.choices[0].message.content
+
+
+if __name__ == "__main__":
+    config = load_config()
+
+    assistant = AssistantChatOpenAI(config.llm)
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of Russia?"},
+    ]
+
+    response = assistant.invoke(messages)
+    print("Response:", response)
+    print("History:", assistant.describe())

@@ -25,11 +25,17 @@ automl:
   fedot:
     predictor_init_kwargs:
       preset: best_quality
+      with_tuning: True
     predictor_fit_kwargs: {}
+  fedot_ind:
+    predictor_init_kwargs:
+      preset: best_quality
+      with_tuning: True
+    predictor_fit_kwargs: { }
 llm:
   provider: openai
-  model: gpt-4o-mini
-  base_url: https://models.inference.ai.azure.com
+  model: gemini-2.0-flash
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
   api_key: ${env:FEDOTLLM_LLM_API_KEY}
   max_tokens: 512
   temperature: 0
