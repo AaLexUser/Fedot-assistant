@@ -67,7 +67,7 @@ PROBLEM_TO_API_CONFIG = {
 }
 
 
-class FedotIndustrialPredictor(Predictor):
+class FedotIndustrialTabularPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
@@ -77,7 +77,7 @@ class FedotIndustrialPredictor(Predictor):
 
     def fit(
         self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "FedotIndustrialPredictor":
+    ) -> "FedotIndustrialTabularPredictor":
         self.eval_metric = task.eval_metric
         self.problem_type = task.problem_type
 
@@ -171,7 +171,7 @@ class FedotIndustrialPredictor(Predictor):
         return predictor_init_kwargs
 
 
-class FedotIndustrialTimeSeriesPredictor(FedotIndustrialPredictor):
+class FedotIndustrialTimeSeriesPredictor(FedotIndustrialTabularPredictor):
     def __init__(self, config: Any):
         super().__init__(config)
         self.predictor: Optional[FedotIndustrialTimeSeriesPredictor] = None
