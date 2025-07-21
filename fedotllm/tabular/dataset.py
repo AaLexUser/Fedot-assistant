@@ -17,7 +17,7 @@ def load_pd(data):
         elif path.suffix in CSV_SUFFIXES:
             format = "csv"
         else:
-            raise Exception("file format " + format + " not supported!")
+            raise Exception(f"file format {format} not supported!")
 
         match format:
             case "excel":

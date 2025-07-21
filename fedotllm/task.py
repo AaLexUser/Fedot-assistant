@@ -91,10 +91,6 @@ class PredictionTask:
             ),
         )
 
-    @staticmethod
-    def save_artifacts(full_save_path, predictor):
-        predictor.save_artifacts(full_save_path)
-
     def load_task_data(self, dataset_key: str) -> pd.DataFrame:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:

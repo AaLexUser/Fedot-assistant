@@ -202,7 +202,7 @@ def run_assistant(
 
         full_save_path = Path(config.save_artifacts.path) / artifacts_dir_name
 
-        task.save_artifacts(full_save_path, assistant.predictor)
+        assistant.predictor.save_artifacts(str(full_save_path), task)
 
         rprint(
             f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}"

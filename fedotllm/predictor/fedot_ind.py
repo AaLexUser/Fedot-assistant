@@ -129,7 +129,7 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             predictions, columns=[task.label_column], index=task.test_data.index
         )
 
-    def save_artifacts(self, path: str) -> None:
+    def save_artifacts(self, path: str, task: PredictionTask) -> None:
         self.get_current_pipeline(self.predictor.manager).save(path)
 
     @staticmethod

@@ -14,5 +14,5 @@ class Predictor:
     def fit_predict(self, task: PredictionTask) -> Any:
         return self.fit(task).predict(task)
 
-    def save_artifacts(self, path: str) -> None:
+    def save_artifacts(self, path: str, task: PredictionTask) -> None:
         raise NotImplementedError

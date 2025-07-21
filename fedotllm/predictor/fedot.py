@@ -181,7 +181,7 @@ class FedotTabularPredictor(Predictor):
             predictions = self.predictor.predict(task.test_data)
         return pd.DataFrame(predictions, columns=[task.label_column])
 
-    def save_artifacts(self, path: str):
+    def save_artifacts(self, path: str, task: PredictionTask):
         self.predictor.current_pipeline.save(path)
 
 
@@ -248,7 +248,7 @@ class FedotMultiModalPredictor(Predictor):
             predictions, columns=[task.label_column], index=task.test_data.index
         )
 
-    def save_artifacts(self, path: str):
+    def save_artifacts(self, path: str, task: PredictionTask):
         self.predictor.current_pipeline.save(path)
 
 
@@ -308,7 +308,7 @@ class FedotTimeSeriesPredictor(Predictor):
             index=task.test_data.index,
         )
 
-    def save_artifacts(self, path: str) -> None:
+    def save_artifacts(self, path: str, task: PredictionTask) -> None:
         self.predictor.current_pipeline.save(path)
 
     def prepare_data(

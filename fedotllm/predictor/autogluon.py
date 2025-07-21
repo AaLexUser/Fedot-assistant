@@ -218,7 +218,7 @@ class AutogluonMultimodalPredictor(Predictor):
             joblib.dump(artifacts, f)
 
             local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dir_exist_ok=True)
+            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
 
 
 METRIC_TO_TIMESERIES = {
@@ -362,4 +362,4 @@ class AutogluonTimeSeriesPredictor(Predictor):
             joblib.dump(artifacts, f)
 
             local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dir_exist_ok=True)
+            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
