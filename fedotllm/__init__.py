@@ -2,7 +2,7 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Annotated, List, Optional, Union
+from typing import Annotated, List, Optional, Union, Tuple
 from pathlib import Path
 import pandas as pd
 import datetime
@@ -127,7 +127,7 @@ def run_assistant(
         ),
     ] = None,
     output_filename: Annotated[Optional[str], typer.Option(help="Output File")] = "",
-) -> str:
+) -> Tuple[PredictionTask, PredictionAssistant]:
     start_time = time.time()
 
     logging.info("Starting FedotLLM")
@@ -208,7 +208,7 @@ def run_assistant(
             f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}"
         )
 
-    return output_filename
+    return task, assistant
 
 
 def main():
