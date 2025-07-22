@@ -6,6 +6,7 @@ from ..constants import (
     NO_FILE_IDENTIFIED,
     PROBLEM_TYPES,
     NO_ID_COLUMN_IDENTIFIED,
+    NO_TIMESTAMP_COLUMN_IDENTIFIED,
     METRICS_DESCRIPTION,
     TASK_TYPES,
     DATA_EXTENSIONS,
@@ -247,7 +248,8 @@ class TimestampColumnPromptGenerator(PromptGenerator):
                 self.data_description_prompt,
                 (
                     "Based on the data description, which one of these columns is likely to be the timestamp column:"
-                    f"\n{', '.join(self.column_names)}"
+                    f"\n{', '.join(self.column_names)}",
+                    f"If no reasonable timestamp column is preset, response with the value {NO_TIMESTAMP_COLUMN_IDENTIFIED}",
                 ),
                 self.get_field_parsing_prompt(),
             ]

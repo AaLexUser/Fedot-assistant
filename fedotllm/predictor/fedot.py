@@ -2,6 +2,7 @@ from .base import Predictor
 from typing import Any, Dict, Optional
 from collections import defaultdict
 from fedot.api.main import Fedot
+from fedot.core.pipelines.pipeline import Pipeline
 from fedot.core.data.multi_modal import MultiModalData
 from fedot.core.data.data import InputData
 from fedot.core.repository.tasks import Task, TaskTypesEnum, TsForecastingParams
@@ -296,16 +297,15 @@ class FedotTimeSeriesPredictor(Predictor):
             task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
             and self.problem_type in [BINARY, MULTICLASS]
         ):
-            return pd.DataFrame(
-                self.predictor.predict_proba(input_data),
-                columns=[task.label_column],
-                index=task.test_data.index,
-            )
+            predictions = self.predictor.predict_proba(input_data)
+        else:
+            predictions = self.predictor.predict(input_data)
 
+        pred_len = len(predictions)
         return pd.DataFrame(
-            self.predictor.predict(input_data),
+            predictions,
             columns=[task.label_column],
-            index=task.test_data.index,
+            index=task.test_data.index[:pred_len],
         )
 
     def save_artifacts(self, path: str, task: PredictionTask) -> None:

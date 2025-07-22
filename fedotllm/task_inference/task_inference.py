@@ -22,6 +22,7 @@ from ..prompting import (
 from ..constants import (
     NO_FILE_IDENTIFIED,
     NO_ID_COLUMN_IDENTIFIED,
+    NO_TIMESTAMP_COLUMN_IDENTIFIED,
     PROBLEM_TYPES,
     TASK_TYPES,
     CLASSIFICATION_PROBLEM_TYPES,
@@ -198,7 +199,7 @@ class LabelColumnInference(TaskInference):
 class TimestampColumnInference(TaskInference):
     def initialize_task(self, task):
         column_names = list(task.train_data.columns)
-        self.valid_values = column_names
+        self.valid_values = column_names + NO_TIMESTAMP_COLUMN_IDENTIFIED
         self.prompt_genetator = TimestampColumnPromptGenerator(
             data_description=task.metadata["description"], column_names=column_names
         )

@@ -18,6 +18,7 @@ from .constants import (
     MULTIMODAL,
     TIME_SERIES,
     DEFAULT_FORECAST_HORIZON,
+    NO_TIMESTAMP_COLUMN_IDENTIFIED
 )
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,8 @@ class PredictionTask:
     def timestamp_column(self) -> Optional[str]:
         """Return the timestamp column for the task."""
         if "timestamp_column" in self.metadata and self.metadata["timestamp_column"]:
+            if self.metadata["timestamp_column"] == NO_TIMESTAMP_COLUMN_IDENTIFIED:
+                return None
             return self.metadata["timestamp_column"]
         else:
             # should ideally never be called after TimestampColumnInference has run

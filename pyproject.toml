@@ -16,7 +16,6 @@ dependencies = [
     "autogluon-tabular[all]>=1.2,<2.0",
     "openai>=1.65.3,<2.0.0",
     "tenacity>=9.0.0,<10.0.0",
-    "fedot>=0.7.5,<0.8.0",
     "autogluon>=1.2,<2.0",
     "giotto-tda>=0.6.0,<0.7.0",
     "ripser>=0.6.4,<0.7.0",
