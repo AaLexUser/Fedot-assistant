@@ -1,34 +1,36 @@
-from typing import List, Dict, Optional, Union, Iterable, Any
-from ..task import PredictionTask
-from ..exceptions import OutputParserException
 import logging
+from typing import Any, Dict, Iterable, List, Optional, Union
+
 from autogluon.core.utils.utils import infer_problem_type
-from ..llm import AssistantChatOpenAI
-from ..prompting import (
-    PromptGenerator,
-    TaskTypePromptGenerator,
-    DescriptionFileNamePromptGenerator,
-    DataFileNamePromptGenerator,
-    LabelColumnPromptGenerator,
-    ProblemTypePromptGenerator,
-    TimestampColumnPromptGenerator,
-    StaticFeaturesFileNamePromptGenerator,
-    ForecastLengthPromptGenerator,
-    TestIDColumnPromptGenerator,
-    TrainIDColumnPromptGenerator,
-    OutputIDColumnPromptGenerator,
-    EvalMetricPromptGenerator,
-)
+
 from ..constants import (
+    CLASSIFICATION_PROBLEM_TYPES,
+    METRICS_BY_PROBLEM_TYPE,
+    METRICS_DESCRIPTION,
     NO_FILE_IDENTIFIED,
     NO_ID_COLUMN_IDENTIFIED,
     NO_TIMESTAMP_COLUMN_IDENTIFIED,
     PROBLEM_TYPES,
     TASK_TYPES,
-    CLASSIFICATION_PROBLEM_TYPES,
-    METRICS_DESCRIPTION,
-    METRICS_BY_PROBLEM_TYPE,
 )
+from ..exceptions import OutputParserException
+from ..llm import AssistantChatOpenAI
+from ..prompting import (
+    DataFileNamePromptGenerator,
+    DescriptionFileNamePromptGenerator,
+    EvalMetricPromptGenerator,
+    ForecastLengthPromptGenerator,
+    LabelColumnPromptGenerator,
+    OutputIDColumnPromptGenerator,
+    ProblemTypePromptGenerator,
+    PromptGenerator,
+    StaticFeaturesFileNamePromptGenerator,
+    TaskTypePromptGenerator,
+    TestIDColumnPromptGenerator,
+    TimestampColumnPromptGenerator,
+    TrainIDColumnPromptGenerator,
+)
+from ..task import PredictionTask
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +201,7 @@ class LabelColumnInference(TaskInference):
 class TimestampColumnInference(TaskInference):
     def initialize_task(self, task):
         column_names = list(task.train_data.columns)
-        self.valid_values = column_names + NO_TIMESTAMP_COLUMN_IDENTIFIED
+        self.valid_values = column_names + [NO_TIMESTAMP_COLUMN_IDENTIFIED]
         self.prompt_genetator = TimestampColumnPromptGenerator(
             data_description=task.metadata["description"], column_names=column_names
         )

@@ -1,18 +1,19 @@
 from abc import ABC, abstractmethod
+from functools import partial
 from pathlib import Path
 from typing import Union
-from ..utils import is_text_file
+
 from ..constants import (
+    DATA_EXTENSIONS,
+    METRICS_DESCRIPTION,
     NO_FILE_IDENTIFIED,
-    PROBLEM_TYPES,
     NO_ID_COLUMN_IDENTIFIED,
     NO_TIMESTAMP_COLUMN_IDENTIFIED,
-    METRICS_DESCRIPTION,
+    PROBLEM_TYPES,
     TASK_TYPES,
-    DATA_EXTENSIONS,
 )
+from ..utils import is_text_file
 from .utils import get_outer_columns, parse_and_check_json
-from functools import partial
 
 
 class PromptGenerator(ABC):
@@ -248,8 +249,8 @@ class TimestampColumnPromptGenerator(PromptGenerator):
                 self.data_description_prompt,
                 (
                     "Based on the data description, which one of these columns is likely to be the timestamp column:"
-                    f"\n{', '.join(self.column_names)}",
-                    f"If no reasonable timestamp column is preset, response with the value {NO_TIMESTAMP_COLUMN_IDENTIFIED}",
+                    f"\n{', '.join(self.column_names)}"
+                    f"If no reasonable timestamp column is preset, response with the value {NO_TIMESTAMP_COLUMN_IDENTIFIED}"
                 ),
                 self.get_field_parsing_prompt(),
             ]
