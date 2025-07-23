@@ -1,34 +1,35 @@
 """Predictors solve tabular prediction tasks"""
 
+import logging
 import os
-import joblib
 import shutil
 from collections import defaultdict
 from typing import Any, Dict
-import pandas as pd
 
-from autogluon.tabular import TabularPredictor
-from autogluon.multimodal import MultiModalPredictor
-from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
-from fedotllm.tabular import TabularDataset
+import joblib
+import numpy as np
+import pandas as pd
 from autogluon.common.features.feature_metadata import FeatureMetadata
 from autogluon.core.metrics import make_scorer
+from autogluon.multimodal import MultiModalPredictor
+from autogluon.tabular import TabularPredictor
+from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
 from sklearn.metrics import mean_squared_log_error
 
+from fedotllm.tabular import TabularDataset
+
+from ..constants import (
+    BINARY,
+    CLASSIFICATION_PROBA_EVAL_METRIC,
+    MEAN_ABSOLUTE_ERROR,
+    MEAN_SQUARED_ERROR,
+    MULTICLASS,
+    ROOT_MEAN_SQUARED_ERROR,
+    ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR,
+)
 from ..task import PredictionTask
 from ..utils import unpack_omega_config
 from .base import Predictor
-import logging
-import numpy as np
-from ..constants import (
-    ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR,
-    CLASSIFICATION_PROBA_EVAL_METRIC,
-    BINARY,
-    MULTICLASS,
-    ROOT_MEAN_SQUARED_ERROR,
-    MEAN_SQUARED_ERROR,
-    MEAN_ABSOLUTE_ERROR,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class AutogluonTabularPredictor(Predictor):
             joblib.dump(artifacts, f)
 
             local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dir_exist_ok=True)
+            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
 
 
 class AutogluonMultimodalPredictor(Predictor):
