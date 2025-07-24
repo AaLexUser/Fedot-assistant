@@ -9,6 +9,7 @@ from .fedot import (
     FedotTimeSeriesPredictor,
 )
 from .fedot_ind import (
+    FedotIndustrialTabularPredictor,
     FedotIndustrialTimeSeriesPredictor,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "FedotTabularPredictor",
     "FedotMultiModalPredictor",
     "FedotTimeSeriesPredictor",
+    "FedotIndustrialTabularPredictor",
     "FedotIndustrialTimeSeriesPredictor",
     "AutogluonTabularPredictor",
     "AutogluonMultimodalPredictor",

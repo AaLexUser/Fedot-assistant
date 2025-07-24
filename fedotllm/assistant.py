@@ -7,6 +7,7 @@ from .predictor import (
     AutogluonTabularPredictor,
     AutogluonMultimodalPredictor,
     AutogluonTimeSeriesPredictor,
+    FedotIndustrialTabularPredictor,
     FedotIndustrialTimeSeriesPredictor,
 )
 from .task import PredictionTask
@@ -180,6 +181,10 @@ class PredictionAssistant:
                         )
             case "fedot_ind":
                 match task.task_type:
+                    case "tabular":
+                        self.predictor = FedotIndustrialTabularPredictor(
+                            self.config.automl.fedot_ind
+                        )
                     case "time_series":
                         self.predictor = FedotIndustrialTimeSeriesPredictor(
                             self.config.automl.fedot_ind

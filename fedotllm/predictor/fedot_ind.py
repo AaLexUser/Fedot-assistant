@@ -67,45 +67,29 @@ PROBLEM_TO_API_CONFIG = {
 }
 
 
-class FedotIndustrialTimeSeriesPredictor(Predictor):
+class FedotIndustrialTabularPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
         self.predictor: Optional[FedotIndustrial] = None
         self.problem_type: Optional[str] = None
         self.eval_metric: Optional[str] = None
-        self.historical_data: Optional[np.ndarray] = None
 
     def fit(
         self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "FedotIndustrialTimeSeriesPredictor":
+    ) -> "FedotIndustrialTabularPredictor":
         self.eval_metric = task.eval_metric
         self.problem_type = task.problem_type
 
-        predictor_init_kwargs = {
-            "task": PROBLEM_TO_FEDOT_IND[self.problem_type],
-            "problem": PROBLEM_TO_FEDOT_IND[self.problem_type],
-            "timeout": time_limit,
-            "metric": METRICS_TO_FEDOT_IND[self.eval_metric],
-            "quality_loss": METRICS_TO_FEDOT_IND[self.eval_metric],
-            "forecast_length": task.forecast_horizon,
-            "tuning_timeout": time_limit,
-            **configure_dask_cluster(),
-            **unpack_omega_config(self.config.predictor_init_kwargs),
-        }
+        predictor_init_kwargs = self.get_init_kwargs(task, time_limit)
 
-        default_config = PROBLEM_TO_API_CONFIG[self.problem_type]
-        predictor_init_kwargs = ApiConfigCheck().update_config_with_kwargs(
-            default_config, **predictor_init_kwargs
-        )
-
-        logger.info("Fitting FedotIndustrial TimeseriesPredictor")
+        logger.info(f"Fitting {self.__class__.__name__}")
         logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
         self.metadata |= {
             "predictor_init_kwargs": predictor_init_kwargs,
         }
 
-        input_data = self.prepare_industrial_data(task, is_for_forecast=False)
+        input_data = self.prepare_industrial_data(task, is_for_predict=False)
         self.predictor = FedotIndustrial(**predictor_init_kwargs)
         self.predictor.fit(input_data)
         self.predictor.shutdown()
@@ -116,7 +100,7 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
-        input_data = self.prepare_industrial_data(task, is_for_forecast=True)
+        input_data = self.prepare_industrial_data(task, is_for_predict=True)
         if (
             task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
             and self.problem_type in [BINARY, MULTICLASS]
@@ -139,9 +123,92 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
         return manager.solver
 
     def prepare_industrial_data(
-        self, task: PredictionTask, is_for_forecast: Optional[bool] = False
+        self, task: PredictionTask, is_for_predict: Optional[bool] = False
     ) -> tuple[np.ndarray, np.ndarray]:
-        data = task.test_data if is_for_forecast else task.train_data
+        data = task.test_data if is_for_predict else task.train_data
+        series = data.to_numpy().squeeze()
+        return series, series
+
+    @staticmethod
+    def configure_dask_cluster():
+        logical_cores = psutil.cpu_count()
+        cuda_available = torch.cuda.is_available()
+        gpu_count = torch.cuda.device_count() if cuda_available else 0
+
+        if cuda_available:
+            # GPU workload: 1 worker per GPU, balance threads
+            n_workers = min(gpu_count, 4)  # Cap at 4 workers to avoid over-subscription
+            threads_per_worker = max(logical_cores // n_workers, 1)
+        else:
+            n_workers = max(logical_cores // 2, 1)  # Max parallelism for small machines
+            threads_per_worker = 2  # Avoid GIL for CPU-bound tasks
+
+        return {
+            "n_workers": n_workers,
+            "threads_per_worker": threads_per_worker,
+            "memory_limit": "auto",
+        }
+
+    def get_init_kwargs(
+        self, task: PredictionTask, time_limit: Optional[float] = None
+    ) -> dict:
+        predictor_init_kwargs = {
+            "task": PROBLEM_TO_FEDOT_IND[self.problem_type],
+            "problem": PROBLEM_TO_FEDOT_IND[self.problem_type],
+            "timeout": time_limit,
+            "metric": METRICS_TO_FEDOT_IND[self.eval_metric],
+            "quality_loss": METRICS_TO_FEDOT_IND[self.eval_metric],
+            "tuning_timeout": time_limit,
+            **self.configure_dask_cluster(),
+            **unpack_omega_config(self.config.predictor_init_kwargs),
+        }
+
+        default_config = PROBLEM_TO_API_CONFIG[self.problem_type]
+
+        predictor_init_kwargs = ApiConfigCheck().update_config_with_kwargs(
+            default_config, **predictor_init_kwargs
+        )
+        return predictor_init_kwargs
+
+
+class FedotIndustrialTimeSeriesPredictor(FedotIndustrialTabularPredictor):
+    def __init__(self, config: Any):
+        super().__init__(config)
+        self.predictor: Optional[FedotIndustrialTimeSeriesPredictor] = None
+        self.historical_data: Optional[np.ndarray] = None
+
+    def get_init_kwargs(
+        self, task: PredictionTask, time_limit: Optional[float] = None
+    ) -> dict:
+        predictor_init_kwargs = {
+            "task": "ts_forecasting",
+            "problem": "ts_forecasting",
+            "timeout": time_limit,
+            "metric": METRICS_TO_FEDOT_IND[self.eval_metric],
+            "quality_loss": METRICS_TO_FEDOT_IND[self.eval_metric],
+            "forecast_length": task.forecast_horizon,
+            "tuning_timeout": time_limit,
+            **self.configure_dask_cluster(),
+            **unpack_omega_config(self.config.predictor_init_kwargs),
+        }
+
+        default_config = DEFAULT_TSF_API_CONFIG
+        predictor_init_kwargs = ApiConfigCheck().update_config_with_kwargs(
+            default_config, **predictor_init_kwargs
+        )
+        return predictor_init_kwargs
+
+    def predict(self, task: PredictionTask) -> TabularDataset:
+        input_data = self.prepare_industrial_data(task, is_for_predict=True)
+        predictions = self.predictor.predict(input_data)
+        return TabularDataset(
+            predictions, columns=[task.label_column], index=task.test_data.index
+        )
+
+    def prepare_industrial_data(
+        self, task: PredictionTask, is_for_predict: Optional[bool] = False
+    ) -> tuple[np.ndarray, np.ndarray]:
+        data = task.test_data if is_for_predict else task.train_data
 
         timestamp_col = task.timestamp_column
         if timestamp_col and timestamp_col in data.columns:
@@ -150,28 +217,8 @@ class FedotIndustrialTimeSeriesPredictor(Predictor):
             data = data.set_index(timestamp_col)
         series = data.to_numpy().squeeze()
 
-        if is_for_forecast:
+        if is_for_predict:
             return self.historical_data, series
 
         self.historical_data = series
         return series, series[-task.forecast_horizon :]
-
-
-def configure_dask_cluster():
-    logical_cores = psutil.cpu_count()
-    cuda_available = torch.cuda.is_available()
-    gpu_count = torch.cuda.device_count() if cuda_available else 0
-
-    if cuda_available:
-        # GPU workload: 1 worker per GPU, balance threads
-        n_workers = min(gpu_count, 4)  # Cap at 4 workers to avoid over-subscription
-        threads_per_worker = max(logical_cores // n_workers, 1)
-    else:
-        n_workers = max(logical_cores // 2, 1)  # Max parallelism for small machines
-        threads_per_worker = 2  # Avoid GIL for CPU-bound tasks
-
-    return {
-        "n_workers": n_workers,
-        "threads_per_worker": threads_per_worker,
-        "memory_limit": "auto",
-    }
