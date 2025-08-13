@@ -1,5 +1,6 @@
+from typing import Any, Optional
+
 from ..task import PredictionTask
-from typing import Optional, Any
 
 
 class Predictor:

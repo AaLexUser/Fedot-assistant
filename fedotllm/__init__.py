@@ -1,20 +1,20 @@
+import datetime
 import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Annotated, List, Optional, Union, Tuple
 from pathlib import Path
-import pandas as pd
-import datetime
+from typing import Annotated, List, Optional, Tuple, Union
 
+import pandas as pd
 import typer
 from omegaconf import OmegaConf
 from rich import print as rprint
 
-from .constants import DEFAULT_QUALITY, PRESETS, NO_ID_COLUMN_IDENTIFIED
-from .utils import load_config
-from .task import PredictionTask
 from .assistant import PredictionAssistant
+from .constants import DEFAULT_QUALITY, NO_ID_COLUMN_IDENTIFIED, PRESETS
+from .task import PredictionTask
+from .utils import load_config
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.ERROR)

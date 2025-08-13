@@ -1,37 +1,40 @@
-from .base import Predictor
-from typing import Any, Dict, Optional
-from collections import defaultdict
-from fedot.api.main import Fedot
-from fedot.core.pipelines.pipeline import Pipeline
-from fedot.core.data.multi_modal import MultiModalData
-from fedot.core.data.data import InputData
-from fedot.core.repository.tasks import Task, TaskTypesEnum, TsForecastingParams
-from fedot.core.repository.dataset_types import DataTypesEnum
-from ..task import PredictionTask
-from ..utils import unpack_omega_config
-from golem.core.dag.graph_utils import graph_structure
-from fedotllm.tabular import TabularDataset
-from PIL import Image
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
 import logging
+import os
+from collections import defaultdict
+from typing import Any, Dict, Optional
+
+import joblib
+import numpy as np
+import pandas as pd
+from fedot.api.main import Fedot
+from fedot.core.data.data import InputData
+from fedot.core.data.multi_modal import MultiModalData
+from fedot.core.repository.dataset_types import DataTypesEnum
+from fedot.core.repository.tasks import Task, TaskTypesEnum, TsForecastingParams
+from golem.core.dag.graph_utils import graph_structure
+from PIL import Image
+from tqdm import tqdm
+
+from fedotllm.tabular import TabularDataset
 
 from ..constants import (
-    ROC_AUC,
-    LOG_LOSS,
     ACCURACY,
-    F1,
-    ROOT_MEAN_SQUARED_ERROR,
-    MEAN_SQUARED_ERROR,
-    MEAN_ABSOLUTE_ERROR,
-    R2,
     BINARY,
-    MULTICLASS,
-    REGRESSION,
-    TIME_SERIES,
     CLASSIFICATION_PROBA_EVAL_METRIC,
+    F1,
+    LOG_LOSS,
+    MEAN_ABSOLUTE_ERROR,
+    MEAN_SQUARED_ERROR,
+    MULTICLASS,
+    R2,
+    REGRESSION,
+    ROC_AUC,
+    ROOT_MEAN_SQUARED_ERROR,
+    TIME_SERIES,
 )
+from ..task import PredictionTask
+from ..utils import unpack_omega_config
+from .base import Predictor
 
 logger = logging.getLogger(__name__)
 
@@ -160,10 +163,20 @@ class FedotTabularPredictor(Predictor):
             "predictor_fit_kwargs": predictor_fit_kwargs,
         }
 
+        train_df = task.train_data
+        label_col = task.label_column
+        if label_col not in train_df.columns:
+            raise ValueError(
+                f"Label column '{label_col}' not found in train_data. "
+                f"train_data shape={train_df.shape}, columns={list(train_df.columns)[:10]}..."
+            )
+        X_train = train_df.drop(columns=[label_col])
+        y_train = train_df[label_col]
+
         self.predictor = Fedot(**predictor_init_kwargs)
         self.predictor.fit(
-            task.train_data,
-            task.label_column,
+            X_train,
+            y_train,
             **unpack_omega_config(predictor_fit_kwargs),
         )
 
@@ -173,16 +186,34 @@ class FedotTabularPredictor(Predictor):
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
+        # Drop label column from test data if it exists and preserve original index
+        test_features = task.test_data.drop(
+            columns=[task.label_column], errors="ignore"
+        )
         if (
             task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
             and self.problem_type in [BINARY, MULTICLASS]
         ):
-            predictions = self.predictor.predict_proba(task.test_data)
+            predictions = self.predictor.predict_proba(test_features)
         else:
-            predictions = self.predictor.predict(task.test_data)
-        return pd.DataFrame(predictions, columns=[task.label_column])
+            predictions = self.predictor.predict(test_features)
+        return pd.DataFrame(
+            predictions, columns=[task.label_column], index=task.test_data.index
+        )
 
     def save_artifacts(self, path: str, task: PredictionTask):
+        artifacts = {
+            "trained_model": self,
+            "train_data": task.train_data,
+            "test_data": task.test_data,
+            "out_data": task.sample_submission_data,
+        }
+        full_save_path_pkl_file = f"{path}/artifacts.pkl"
+        os.makedirs(path, exist_ok=True)
+
+        with open(full_save_path_pkl_file, "wb") as f:
+            joblib.dump(artifacts, f)
+
         self.predictor.current_pipeline.save(path)
 
 
@@ -250,6 +281,18 @@ class FedotMultiModalPredictor(Predictor):
         )
 
     def save_artifacts(self, path: str, task: PredictionTask):
+        artifacts = {
+            "trained_model": self,
+            "train_data": task.train_data,
+            "test_data": task.test_data,
+            "out_data": task.sample_submission_data,
+        }
+        full_save_path_pkl_file = f"{path}/artifacts.pkl"
+        os.makedirs(path, exist_ok=True)
+
+        with open(full_save_path_pkl_file, "wb") as f:
+            joblib.dump(artifacts, f)
+
         self.predictor.current_pipeline.save(path)
 
 
@@ -309,6 +352,17 @@ class FedotTimeSeriesPredictor(Predictor):
         )
 
     def save_artifacts(self, path: str, task: PredictionTask) -> None:
+        artifacts = {
+            "trained_model": self,
+            "train_data": task.train_data,
+            "test_data": task.test_data,
+            "out_data": task.sample_submission_data,
+        }
+        full_save_path_pkl_file = f"{path}/artifacts.pkl"
+        os.makedirs(path, exist_ok=True)
+
+        with open(full_save_path_pkl_file, "wb") as f:
+            joblib.dump(artifacts, f)
         self.predictor.current_pipeline.save(path)
 
     def prepare_data(

@@ -1,17 +1,17 @@
 from .task_inference import (
-    TaskInference,
-    DescriptionFileNameInference,
     DataFileNameInference,
-    TaskTypeInference,
-    ProblemTypeInference,
-    LabelColumnInference,
-    TimestampColumnInference,
-    StaticFeaturesFileNameInference,
-    ForecastHorizonInference,
-    TestIDColumnInference,
-    TrainIDColumnInference,
-    OutputIDColumnInference,
+    DescriptionFileNameInference,
     EvalMetricInference,
+    ForecastHorizonInference,
+    LabelColumnInference,
+    OutputIDColumnInference,
+    ProblemTypeInference,
+    StaticFeaturesFileNameInference,
+    TaskInference,
+    TaskTypeInference,
+    TestIDColumnInference,
+    TimestampColumnInference,
+    TrainIDColumnInference,
 )
 
 __all__ = [

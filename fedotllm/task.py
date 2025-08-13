@@ -1,24 +1,27 @@
 """A task encapsulates the data for a data science task or project. It contains descriptions, data, metadata."""
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-import logging
+
 import pandas as pd
+
 from fedotllm.tabular import TabularDataset, load_pd
+
 from .constants import (
-    OUTPUT,
-    TEST,
-    TRAIN,
-    DESCRIPTION,
-    STATIC_FEATURES,
-    REGRESSION,
     BINARY,
-    PREFERED_METRIC_BY_PROBLEM_TYPE,
-    TABULAR,
-    MULTIMODAL,
-    TIME_SERIES,
     DEFAULT_FORECAST_HORIZON,
-    NO_TIMESTAMP_COLUMN_IDENTIFIED
+    DESCRIPTION,
+    MULTIMODAL,
+    NO_TIMESTAMP_COLUMN_IDENTIFIED,
+    OUTPUT,
+    PREFERED_METRIC_BY_PROBLEM_TYPE,
+    REGRESSION,
+    STATIC_FEATURES,
+    TABULAR,
+    TEST,
+    TIME_SERIES,
+    TRAIN,
 )
 
 logger = logging.getLogger(__name__)

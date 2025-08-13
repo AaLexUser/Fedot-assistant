@@ -23,14 +23,14 @@ dependencies = [
     "opencv-python>=4.11.0,<5.0.0",
     "pillow>=11.1.0,<12.0.0",
     "tensorflow>=2.18.0,<3.0.0",
-    "langfuse>=2.60.7,<3.0.0",
+    "langfuse==2.59.7",
     "python-dotenv>=1.1.0",
     "nbformat>=4.2.0",
     "dask-expr>=1.0.0,<2.0.0",
-    "fedot-ind",
     "json-repair>=0.46.2",
     "tf-keras>=2.19.0",
     "jupyter>=1.1.1",
+    "fedot",
 ]
 
 [project.optional-dependencies]
@@ -40,9 +40,14 @@ dev = ["ruff>=0.9.9"]
 fedotllm = "fedotllm:main"
 
 [tool.uv.sources]
-fedot-ind = { git = "https://github.com/aimclub/Fedot.Industrial.git" }
+#fedot-ind = { git = "https://github.com/aimclub/Fedot.Industrial.git" }
+caafe = { git = "https://github.com/AaLexUser/CAAFE.git" }
+fedot = { git = "https://github.com/aimclub/FEDOT.git" }
 
 [dependency-groups]
 dev = [
     "ruff>=0.11.13",
+]
+caafe = [
+    "caafe",
 ]

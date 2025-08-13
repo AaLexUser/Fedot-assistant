@@ -1,40 +1,32 @@
+import logging
+import signal
+import sys
+import threading
+from contextlib import contextmanager
+from typing import Any, List, Optional
+
+from hydra.utils import instantiate
 from omegaconf import DictConfig
+
+from .constants import TABULAR, TIME_SERIES
 from .llm import AssistantChatOpenAI
-from .predictor import (
-    FedotTabularPredictor,
-    FedotMultiModalPredictor,
-    FedotTimeSeriesPredictor,
-    AutogluonTabularPredictor,
-    AutogluonMultimodalPredictor,
-    AutogluonTimeSeriesPredictor,
-    FedotIndustrialTabularPredictor,
-    FedotIndustrialTimeSeriesPredictor,
-)
 from .task import PredictionTask
-from .utils import get_feature_transformers_config
 from .task_inference import (
-    TaskInference,
     DataFileNameInference,
     DescriptionFileNameInference,
-    LabelColumnInference,
-    TaskTypeInference,
-    ProblemTypeInference,
-    TestIDColumnInference,
-    TrainIDColumnInference,
-    OutputIDColumnInference,
     EvalMetricInference,
-    TimestampColumnInference,
-    StaticFeaturesFileNameInference,
     ForecastHorizonInference,
+    LabelColumnInference,
+    OutputIDColumnInference,
+    ProblemTypeInference,
+    StaticFeaturesFileNameInference,
+    TaskInference,
+    TaskTypeInference,
+    TestIDColumnInference,
+    TimestampColumnInference,
+    TrainIDColumnInference,
 )
-import threading
-from typing import Optional, Any, List
-import logging
-import sys
-from contextlib import contextmanager
-import signal
-from hydra.utils import instantiate
-from .constants import TABULAR, TIME_SERIES
+from .utils import get_feature_transformers_config
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +158,18 @@ class PredictionAssistant:
             case "fedot":
                 match task.task_type:
                     case "tabular":
+                        from .predictor.fedot import FedotTabularPredictor
+
                         self.predictor = FedotTabularPredictor(self.config.automl.fedot)
                     case "multimodal":
+                        from .predictor.fedot import FedotMultiModalPredictor
+
                         self.predictor = FedotMultiModalPredictor(
                             self.config.automl.fedot
                         )
                     case "time_series":
+                        from .predictor.fedot import FedotTimeSeriesPredictor
+
                         self.predictor = FedotTimeSeriesPredictor(
                             self.config.automl.fedot
                         )
@@ -182,10 +180,16 @@ class PredictionAssistant:
             case "fedot_ind":
                 match task.task_type:
                     case "tabular":
+                        from .predictor.fedot_ind import FedotIndustrialTabularPredictor
+
                         self.predictor = FedotIndustrialTabularPredictor(
                             self.config.automl.fedot_ind
                         )
                     case "time_series":
+                        from .predictor.fedot_ind import (
+                            FedotIndustrialTimeSeriesPredictor,
+                        )
+
                         self.predictor = FedotIndustrialTimeSeriesPredictor(
                             self.config.automl.fedot_ind
                         )
@@ -196,14 +200,20 @@ class PredictionAssistant:
             case "autogluon":
                 match task.task_type:
                     case "tabular":
+                        from .predictor.autogluon import AutogluonTabularPredictor
+
                         self.predictor = AutogluonTabularPredictor(
                             self.config.automl.autogluon
                         )
                     case "multimodal":
+                        from .predictor.autogluon import AutogluonMultimodalPredictor
+
                         self.predictor = AutogluonMultimodalPredictor(
                             self.config.automl.autogluon
                         )
                     case "time_series":
+                        from .predictor.autogluon import AutogluonTimeSeriesPredictor
+
                         self.predictor = AutogluonTimeSeriesPredictor(
                             self.config.automl.autogluon
                         )

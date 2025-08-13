@@ -1,7 +1,9 @@
-import pandas as pd
 from pathlib import Path
 from typing import TypeAlias
-from .constants import CSV_SUFFIXES, PARQUET_SUFFIXES, EXCEL_SUFFIXES
+
+import pandas as pd
+
+from .constants import CSV_SUFFIXES, EXCEL_SUFFIXES, PARQUET_SUFFIXES
 
 
 def load_pd(data):

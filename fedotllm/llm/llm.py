@@ -1,12 +1,14 @@
-import os
 import logging
-from typing import List, Dict, Any
-from omegaconf import DictConfig
+import os
 import pprint
-from tenacity import retry, stop_after_attempt, wait_exponential
-from langfuse.openai import openai
-from langfuse.decorators import observe
+from typing import Any, Dict, List
+
 from dotenv import load_dotenv
+from langfuse.decorators import observe
+from omegaconf import DictConfig
+from openai import OpenAI
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from fedotllm.utils.configs import load_config
 
 load_dotenv()
@@ -34,7 +36,7 @@ class AssistantChatOpenAI:
             f"FedotLLM is using model {config.model} to assist you with the task."
         )
 
-        self.client = openai.OpenAI(
+        self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
         )

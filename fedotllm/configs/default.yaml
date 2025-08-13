@@ -3,17 +3,15 @@ detect_and_drop_id_column: False
 task_preprocessors_timeout: 3600
 time_limit: 14400
 save_artifacts:
-  enabled: False
+  enabled: True
   append_timestamp: True
   path: "./artifacts"
 feature_transformers:
-  enabled_models: []
+  enabled_models: [CAAFE]
   models:
     CAAFE:
       _target_: fedotllm.transformer.feature_transformers.caafe.CAAFETransformer
       eval_model: lightgdm
-      llm_provider: ${llm.provider}
-      llm_model: ${llm.model}
       num_iterations: 5
       optimization_metric: roc
 automl:

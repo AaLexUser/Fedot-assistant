@@ -1,42 +1,43 @@
+import logging
+from collections import defaultdict
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
 import psutil
 import torch
 from fedot.core.pipelines.pipeline import Pipeline
+from fedot_ind.api.main import FedotIndustrial
 from fedot_ind.api.utils.api_init import ApiManager
 from fedot_ind.api.utils.checkers_collections import ApiConfigCheck
 from fedot_ind.core.repository.config_repository import (
-    DEFAULT_TSF_API_CONFIG,
     DEFAULT_CLF_API_CONFIG,
     DEFAULT_REG_API_CONFIG,
+    DEFAULT_TSF_API_CONFIG,
 )
-
-from .base import Predictor
-from typing import Any, Dict, Optional
-from collections import defaultdict
-from fedot_ind.api.main import FedotIndustrial
-from ..task import PredictionTask
-from ..utils import unpack_omega_config
 from golem.core.dag.graph_utils import graph_structure
+
 from fedotllm.tabular import TabularDataset
-import logging
 
 from ..constants import (
-    ROC_AUC,
-    LOG_LOSS,
     ACCURACY,
-    F1,
-    ROOT_MEAN_SQUARED_ERROR,
-    MEAN_SQUARED_ERROR,
-    MEAN_ABSOLUTE_ERROR,
-    R2,
     BINARY,
-    MULTICLASS,
-    REGRESSION,
     CLASSIFICATION_PROBA_EVAL_METRIC,
-    TIME_SERIES,
+    F1,
+    LOG_LOSS,
+    MEAN_ABSOLUTE_ERROR,
+    MEAN_SQUARED_ERROR,
+    MULTICLASS,
+    R2,
+    REGRESSION,
+    ROC_AUC,
+    ROOT_MEAN_SQUARED_ERROR,
     SYMMETRIC_MEAN_ABSOLUTE_PERCENTAGE_ERROR,
+    TIME_SERIES,
 )
+from ..task import PredictionTask
+from ..utils import unpack_omega_config
+from .base import Predictor
 
 logger = logging.getLogger(__name__)
 

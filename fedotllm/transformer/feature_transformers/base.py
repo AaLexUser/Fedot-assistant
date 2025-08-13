@@ -1,10 +1,13 @@
-from ..base import BaseTransformer, TransformTimeoutError
-import pandas as pd
-from fedotllm.task import PredictionTask
+import copy
 import logging
 import traceback
 from typing import Tuple
-import copy
+
+import pandas as pd
+
+from fedotllm.task import PredictionTask
+
+from ..base import BaseTransformer, TransformTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +104,7 @@ class BaseFeatureTransformer(BaseTransformer):
                 )
 
             task = copy.deepcopy(task)
-            task.train_data = transformed_test_data
+            task.train_data = transformed_train_data
             task.test_data = transformed_test_data
         except Exception as e:
             logger.warning(
