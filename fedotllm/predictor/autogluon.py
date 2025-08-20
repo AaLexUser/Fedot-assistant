@@ -130,8 +130,18 @@ class AutogluonTabularPredictor(Predictor):
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
-            local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
+        src_dir = os.path.abspath(ag_model_dir)
+        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+
+        if src_dir == dst_dir:
+            logger.warning(
+                "Skipping model directory copy because source and destination are the same: %s",
+                src_dir,
+            )
+        else:
+            if os.path.exists(dst_dir):
+                shutil.rmtree(dst_dir)
+            shutil.copytree(src_dir, dst_dir)
 
 
 class AutogluonMultimodalPredictor(Predictor):
@@ -218,8 +228,17 @@ class AutogluonMultimodalPredictor(Predictor):
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
-            local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
+        src_dir = os.path.abspath(ag_model_dir)
+        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+        if src_dir == dst_dir:
+            logger.warning(
+                "Skipping model directory copy because source and destination are the same: %s",
+                src_dir,
+            )
+        else:
+            if os.path.exists(dst_dir):
+                shutil.rmtree(dst_dir)
+            shutil.copytree(src_dir, dst_dir)
 
 
 METRIC_TO_TIMESERIES = {
@@ -362,5 +381,14 @@ class AutogluonTimeSeriesPredictor(Predictor):
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
-            local_model_dir = os.path.join(path, ag_model_dir)
-            shutil.copytree(ag_model_dir, local_model_dir, dirs_exist_ok=True)
+        src_dir = os.path.abspath(ag_model_dir)
+        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+        if src_dir == dst_dir:
+            logger.warning(
+                "Skipping model directory copy because source and destination are the same: %s",
+                src_dir,
+            )
+        else:
+            if os.path.exists(dst_dir):
+                shutil.rmtree(dst_dir)
+            shutil.copytree(src_dir, dst_dir)
