@@ -46,6 +46,10 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# Agents
+.agents/
+skills-lock.json
+
 # ruff
 .ruff_cache
 
