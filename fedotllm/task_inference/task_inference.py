@@ -197,15 +197,16 @@ class TaskTypeInference(TaskInference):
 
 class LabelColumnInference(TaskInference):
     def transform(self, task: PredictionTask) -> PredictionTask:
-        try:
-            label_column = task._infer_label_column_from_sample_submission_data()
-        except Exception:
-            label_column = None
+        if task.load_task_data("output") is not None:
+            try:
+                label_column = task._infer_label_column_from_sample_submission_data()
+            except Exception:
+                label_column = None
 
-        if label_column:
-            self.log_value("label_column", label_column)
-            task.label_column = label_column
-            return task
+            if label_column:
+                self.log_value("label_column", label_column)
+                task.label_column = label_column
+                return task
 
         return super().transform(task)
 
