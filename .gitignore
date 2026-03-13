@@ -68,7 +68,6 @@ skills-lock.json
 
 # Project specific
 fedotllm-*
-test*
 AutogluonModels/
 competitions/
 artifacts/

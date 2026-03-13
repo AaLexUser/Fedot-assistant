@@ -32,8 +32,8 @@ automl:
     predictor_fit_kwargs: { }
 llm:
   provider: openai
-  model: gemini-2.0-flash
-  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+  model: gemma-3-270m-it-mlx
+  base_url: http://127.0.0.1:1234/v1
   api_key: ${env:FEDOTLLM_LLM_API_KEY}
   max_tokens: 512
   temperature: 0

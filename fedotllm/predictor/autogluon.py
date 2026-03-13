@@ -131,7 +131,9 @@ class AutogluonTabularPredictor(Predictor):
             joblib.dump(artifacts, f)
 
         src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+        dst_dir = os.path.join(
+            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
+        )
 
         if src_dir == dst_dir:
             logger.warning(
@@ -229,7 +231,9 @@ class AutogluonMultimodalPredictor(Predictor):
             joblib.dump(artifacts, f)
 
         src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+        dst_dir = os.path.join(
+            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
+        )
         if src_dir == dst_dir:
             logger.warning(
                 "Skipping model directory copy because source and destination are the same: %s",
@@ -382,7 +386,9 @@ class AutogluonTimeSeriesPredictor(Predictor):
             joblib.dump(artifacts, f)
 
         src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
+        dst_dir = os.path.join(
+            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
+        )
         if src_dir == dst_dir:
             logger.warning(
                 "Skipping model directory copy because source and destination are the same: %s",
