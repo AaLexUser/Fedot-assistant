@@ -52,7 +52,7 @@ def _resolve_valid_value(
         >>> _resolve_valid_value("train.csv", valid)
         'project/data/train.csv'
     """
-    parsed_normalized = _normalize_pathlike(parsed_value).lstrip("./")
+    parsed_normalized = _normalize_pathlike(parsed_value).removeprefix("./")
     valid_values_list = list(valid_values)
 
     for valid_value in valid_values_list:
