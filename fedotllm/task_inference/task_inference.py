@@ -266,9 +266,6 @@ class BaseIDColumnInference(TaskInference):
     def get_prompt_generator(self):
         raise NotImplementedError()
 
-    def get_id_column_name(self):
-        raise NotImplementedError()
-
     def process_id_column(self, task, id_column):
         raise NotImplementedError()
 
@@ -290,13 +287,13 @@ class BaseIDColumnInference(TaskInference):
         )
 
     def transform(self, task: PredictionTask) -> PredictionTask:
+        id_column_name = self.get_prompt_generator().fields[0]
         if self.get_data(task) is None:
-            setattr(task, self.get_id_column_name(), None)
+            setattr(task, id_column_name, None)
             return task
 
         self.initialize_task(task)
         parser_output = self._chat_and_parse_prompt_output()
-        id_column_name = self.get_id_column_name()
 
         if parser_output[id_column_name] == NO_ID_COLUMN_IDENTIFIED:
             logger.warning(
@@ -322,9 +319,6 @@ class TestIDColumnInference(BaseIDColumnInference):
 
     def get_prompt_generator(self):
         return TestIDColumnPromptGenerator
-
-    def get_id_column_name(self):
-        return "test_id_column"
 
     def process_id_column(self, task, id_column):
         if task.output_id_column != NO_ID_COLUMN_IDENTIFIED:
@@ -366,9 +360,6 @@ class OutputIDColumnInference(BaseIDColumnInference):
 
     def get_prompt_generator(self):
         return OutputIDColumnPromptGenerator
-
-    def get_id_column_name(self):
-        return "output_id_column"
 
     def process_id_column(self, task, id_column):
         return id_column
