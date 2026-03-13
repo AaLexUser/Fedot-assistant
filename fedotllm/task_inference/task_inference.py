@@ -197,7 +197,7 @@ class TaskTypeInference(TaskInference):
 
 class LabelColumnInference(TaskInference):
     def transform(self, task: PredictionTask) -> PredictionTask:
-        if task.load_task_data("output") is not None:
+        if task.load_task_data("output") is not None and len(task.output_columns) > 1:
             try:
                 label_column = task._infer_label_column_from_sample_submission_data()
             except Exception:

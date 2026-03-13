@@ -47,3 +47,27 @@ def test_test_id_inference_sets_none_when_test_data_missing():
     updated_task = inference.transform(task)
 
     assert updated_task.test_id_column is None
+
+
+def test_label_inference_falls_back_to_prompt_for_one_column_submission(monkeypatch):
+    task = make_task()
+    task.metadata["label_column"] = None
+    task.train_data = pd.DataFrame(
+        {
+            "feature_a": [1, 2],
+            "target": [0, 1],
+        }
+    )
+    task.sample_submission_data = pd.DataFrame({"target": [0, 1]})
+
+    inference = task_inference_module.LabelColumnInference(llm=None)
+    monkeypatch.setattr(
+        inference,
+        "_chat_and_parse_prompt_output",
+        lambda: {"label_column": "target"},
+    )
+    monkeypatch.setattr(inference, "log_value", lambda *args, **kwargs: None)
+
+    updated_task = inference.transform(task)
+
+    assert updated_task.label_column == "target"

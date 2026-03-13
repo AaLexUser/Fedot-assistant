@@ -211,8 +211,10 @@ def parse_and_check_json(
     if json_obj := parse_json(raw_reply):
         for key in expected_keys:
             if key not in json_obj:
-                error = f"Got invalid return object. Expected key `{key}` "
-                f"to be present, but got {json_obj}"
+                error = (
+                    f"Got invalid return object. Expected key `{key}` "
+                    f"to be present, but got {json_obj}"
+                )
                 logging.error(error)
                 raise OutputParserException(error)
         json_obj = {key: json_obj[key] for key in expected_keys}

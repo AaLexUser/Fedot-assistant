@@ -339,6 +339,8 @@ class PredictionTask:
 
         # Assume the first output column is the ID column and ignore it
         relevant_output_cols = self.output_columns[1:]
+        if not relevant_output_cols:
+            return None
 
         # Check if any of the output columns exists in the train data
         existing_output_cols = [
@@ -358,7 +360,9 @@ class PredictionTask:
                 for val in self.train_data[col].unique()
                 if pd.notna(val)
             )
-            if output_set == unique_values or output_set.issubset(unique_values):
+            if output_set and (
+                output_set == unique_values or output_set.issubset(unique_values)
+            ):
                 return col
 
         # If no suitable column is found, raise an exception
