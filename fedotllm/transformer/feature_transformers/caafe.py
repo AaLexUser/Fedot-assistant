@@ -16,7 +16,7 @@ try:
     from caafe.run_llm_code import run_llm_code
 except ImportError:
     raise ImportError(
-        "CAAFE required for feature generation but not installed. Please intall with `pip install caafe@git+https://github.com/AnirudhDagar/CAAFE.git@main`"
+        "CAAFE required for feature generation but not installed. Please intall with `pip install caafe@git+https://github.com/AaLexUser/CAAFE.git@main`"
     )
 
 

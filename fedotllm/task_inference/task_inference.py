@@ -1,10 +1,12 @@
 import logging
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 
 from autogluon.core.utils.utils import infer_problem_type
 
 from ..constants import (
     CLASSIFICATION_PROBLEM_TYPES,
+    DATA_EXTENSIONS,
     METRICS_BY_PROBLEM_TYPE,
     METRICS_DESCRIPTION,
     NO_FILE_IDENTIFIED,
@@ -33,6 +35,10 @@ from ..prompting import (
 from ..task import PredictionTask
 
 logger = logging.getLogger(__name__)
+
+
+def _get_tabular_filenames(paths: Iterable[Union[str, Path]]) -> List[str]:
+    return [str(path) for path in paths if Path(path).suffix.lower() in DATA_EXTENSIONS]
 
 
 class TaskInference:
@@ -152,7 +158,7 @@ class DataFileNameInference(TaskInference):
     """
 
     def initialize_task(self, task):
-        filenames = [str(path) for path in task.filepaths]
+        filenames = _get_tabular_filenames(task.filepaths)
         self.valid_values = filenames + [NO_FILE_IDENTIFIED]
         self.fallback_value = NO_FILE_IDENTIFIED
         self.ignored_value = [NO_FILE_IDENTIFIED]
@@ -168,9 +174,9 @@ class StaticFeaturesFileNameInference(TaskInference):
         exclude_files = [
             path.resolve() for _, path in task.files_mapping.items() if path is not None
         ]
-        filenames = [
-            str(path) for path in task.filepaths if path.resolve() not in exclude_files
-        ]
+        filenames = _get_tabular_filenames(
+            path for path in task.filepaths if path.resolve() not in exclude_files
+        )
         self.valid_values = filenames + [NO_FILE_IDENTIFIED]
         self.fallback_value = NO_FILE_IDENTIFIED
         self.ignored_value = [NO_FILE_IDENTIFIED]
@@ -190,6 +196,20 @@ class TaskTypeInference(TaskInference):
 
 
 class LabelColumnInference(TaskInference):
+    def transform(self, task: PredictionTask) -> PredictionTask:
+        if task.load_task_data("output") is not None and len(task.output_columns) > 1:
+            try:
+                label_column = task._infer_label_column_from_sample_submission_data()
+            except Exception:
+                label_column = None
+
+            if label_column:
+                self.log_value("label_column", label_column)
+                task.label_column = label_column
+                return task
+
+        return super().transform(task)
+
     def initialize_task(self, task):
         column_names = list(task.train_data.columns)
         self.valid_values = column_names
@@ -246,9 +266,6 @@ class BaseIDColumnInference(TaskInference):
     def get_prompt_generator(self):
         raise NotImplementedError()
 
-    def get_id_column_name(self):
-        raise NotImplementedError()
-
     def process_id_column(self, task, id_column):
         raise NotImplementedError()
 
@@ -270,13 +287,13 @@ class BaseIDColumnInference(TaskInference):
         )
 
     def transform(self, task: PredictionTask) -> PredictionTask:
+        id_column_name = self.get_prompt_generator().fields[0]
         if self.get_data(task) is None:
-            setattr(task, self.get_id_column_name(), None)
+            setattr(task, id_column_name, None)
             return task
 
         self.initialize_task(task)
         parser_output = self._chat_and_parse_prompt_output()
-        id_column_name = self.get_id_column_name()
 
         if parser_output[id_column_name] == NO_ID_COLUMN_IDENTIFIED:
             logger.warning(
@@ -302,9 +319,6 @@ class TestIDColumnInference(BaseIDColumnInference):
 
     def get_prompt_generator(self):
         return TestIDColumnPromptGenerator
-
-    def get_id_column_name(self):
-        return "test_id_column"
 
     def process_id_column(self, task, id_column):
         if task.output_id_column != NO_ID_COLUMN_IDENTIFIED:
@@ -346,9 +360,6 @@ class OutputIDColumnInference(BaseIDColumnInference):
 
     def get_prompt_generator(self):
         return OutputIDColumnPromptGenerator
-
-    def get_id_column_name(self):
-        return "output_id_column"
 
     def process_id_column(self, task, id_column):
         return id_column

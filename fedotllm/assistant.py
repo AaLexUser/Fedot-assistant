@@ -5,6 +5,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, List, Optional
 
+from hydra.errors import InstantiationException
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
@@ -66,6 +67,20 @@ class PredictionAssistant:
 
     def handle_exception(self, stage: str, exception: Exception):
         raise Exception(str(exception), stage)
+
+    def _instantiate_feature_transformers(self) -> List[Any]:
+        feature_transformers = []
+        for ft_config in self.feature_transformers_config or []:
+            try:
+                feature_transformers.append(instantiate(ft_config))
+            except (ImportError, InstantiationException) as exc:
+                target = ft_config.get("_target_", "<unknown transformer>")
+                logger.warning(
+                    "Skipping feature transformer %s because it could not be loaded: %s",
+                    target,
+                    exc,
+                )
+        return feature_transformers
 
     def _run_task_inference_preprocessors(
         self, task_inference_preprocessors: List[TaskInference], task: PredictionTask
@@ -134,9 +149,12 @@ class PredictionAssistant:
         task = self.inference_task(task)
         if task.task_type == TABULAR and self.feature_transformers_config:
             logger.info("Automatic feature generation starts...")
-            fe_transformers = [
-                instantiate(ft_config) for ft_config in self.feature_transformers_config
-            ]
+            fe_transformers = self._instantiate_feature_transformers()
+            if not fe_transformers:
+                logger.warning(
+                    "Automatic feature generation skipped because no feature transformers could be loaded"
+                )
+                return task
             for fe_transformer in fe_transformers:
                 try:
                     with timeout(

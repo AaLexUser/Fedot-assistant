@@ -62,18 +62,35 @@ class AssistantChatOpenAI:
             max_completion_tokens=self.max_tokens,
         )
 
-        self.input_ += response.usage.prompt_tokens
-        self.output_ += response.usage.completion_tokens
+        if getattr(response, "error", None):
+            raise RuntimeError(f"LLM request failed: {response.error}")
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise RuntimeError("LLM response did not include any choices")
+
+        prompt_tokens = (
+            getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
+        )
+        completion_tokens = (
+            getattr(getattr(response, "usage", None), "completion_tokens", 0) or 0
+        )
+        content = getattr(getattr(choices[0], "message", None), "content", None)
+        if content is None:
+            raise RuntimeError("LLM response did not include message content")
+
+        self.input_ += prompt_tokens
+        self.output_ += completion_tokens
 
         self.history_.append(
             {
                 "input": messages,
                 "output": pprint.pformat(response),
-                "input_tokens": response.usage.prompt_tokens,
-                "output_tokens": response.usage.completion_tokens,
+                "input_tokens": prompt_tokens,
+                "output_tokens": completion_tokens,
             }
         )
-        return response.choices[0].message.content
+        return content
 
 
 if __name__ == "__main__":
