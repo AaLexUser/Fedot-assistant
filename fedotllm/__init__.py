@@ -277,8 +277,9 @@ def run_assistant(
 
         assistant.predictor.save_artifacts(str(full_save_path), task)
 
-        rprint(
-            f"Artifacts including transformed datasets and trained model saved at {full_save_path}"
+        print(
+            f"Artifacts including transformed datasets and trained model saved at {full_save_path}",
+            flush=True,
         )
 
     return task, assistant

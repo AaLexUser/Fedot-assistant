@@ -237,7 +237,12 @@ class FedotMultiModalPredictor(Predictor):
             **unpack_omega_config(self.config.predictor_init_kwargs),
         }
 
-        train_data = prepare_multi_model_data(task.train_data, task)
+        train_only_cols = [
+            col for col in task.columns_in_train_but_not_test
+            if col != task.label_column
+        ]
+        aligned_train = task.train_data.drop(columns=train_only_cols, errors="ignore")
+        train_data = prepare_multi_model_data(aligned_train, task)
 
         predictor_fit_kwargs = self.config.predictor_fit_kwargs
 

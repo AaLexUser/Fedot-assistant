@@ -141,7 +141,7 @@ PRESET_OPTIONS = ["Лучшее качество", "Высокое качест�
 
 # Time limit configurations (in seconds)
 TIME_LIMIT_MAPPING = {
-    "3 мин": 180,
+    "5 мин": 300,
     "10 мин": 600,
     "30 мин": 1800,
     "1 ч": 3600,
@@ -149,9 +149,9 @@ TIME_LIMIT_MAPPING = {
     "4 ч": 14400,
 }
 
-DEFAULT_TIME_LIMIT = "3 мин"
+DEFAULT_TIME_LIMIT = "5 мин"
 
-TIME_LIMIT_OPTIONS = ["3 мин", "10 мин", "30 мин", "1 ч", "2 ч", "4 ч"]
+TIME_LIMIT_OPTIONS = ["5 мин", "10 мин", "30 мин", "1 ч", "2 ч", "4 ч"]
 
 # LLM configurations
 LLM_MAPPING = {

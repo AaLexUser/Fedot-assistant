@@ -30,11 +30,14 @@ def parse_model_path(log):
     if match:
         return match.group(1)
 
-    # # Try artifacts path pattern (unquoted, at end of line)
-    # artifacts_pattern = r"(?:saved at|Artifacts.*saved at)\s+([^\s]+)"
-    # match = re.search(artifacts_pattern, log, re.IGNORECASE)
-    # if match:
-    #     return match.group(1)
+    # Try artifacts path pattern for FEDOT (e.g., "saved at /path/to/artifacts")
+    # Match "saved at" followed by the rest of the line as the path
+    artifacts_pattern = r"(?:saved at)\s+(.+)$"
+    match = re.search(artifacts_pattern, log, re.IGNORECASE)
+    if match:
+        # Strip any trailing whitespace or punctuation
+        path = match.group(1).strip()
+        return path
 
     return None
 
@@ -196,6 +199,18 @@ def messages():
                 progress.progress(100)
                 process_realtime_logs(line)
                 st.toast("Готово! 🎉", icon="✅")
+                # Keep draining stdout so post-prediction lines
+                # (e.g. artifacts save path) are still captured.
+                for remaining_line in process.stdout:
+                    remaining_line = format_log_line(remaining_line)
+                    st.session_state.logs += remaining_line
+                    if any(
+                        indicator in remaining_line.lower()
+                        for indicator in model_path_indicators
+                    ):
+                        model_path = parse_model_path(remaining_line)
+                        if model_path:
+                            st.session_state.model_path = model_path
                 break
             else:
                 for stage_msg, progress_value in STATUS_BAR_STAGE.items():
@@ -211,5 +226,3 @@ def messages():
                 st.session_state.stage_status[st.session_state.current_stage].update(
                     state="running",
                 )
-        process.stdout.close()
-        st.session_state.process = None

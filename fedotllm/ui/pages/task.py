@@ -374,7 +374,10 @@ def wait_for_process():
     """
     if st.session_state.process is not None:
         process = st.session_state.process
-        process.wait()
+        # Check if process has already finished (poll returns None if still running)
+        if process.poll() is None:
+            # Process is still running, wait for it
+            process.wait()
         st.session_state.task_running = False
         st.session_state.return_code = process.returncode
         st.session_state.process = None
