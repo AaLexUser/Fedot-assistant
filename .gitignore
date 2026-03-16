@@ -59,6 +59,9 @@ skills-lock.json
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
+.cursor/
+
+.pytest_cache/
 
 # VSCode
 .vscode
@@ -71,3 +74,6 @@ fedotllm-*
 AutogluonModels/
 competitions/
 artifacts/
+.env.production
+sample_dataset/
+user_data/

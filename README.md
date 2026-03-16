@@ -79,16 +79,16 @@ The system uses YAML configuration files you can customize. The default configur
 
 ```bash
 # Run with default settings
-fedotllm /path/to/your/task/directory
+fedotllm run /path/to/your/task/directory
 
 # Use specific presets
-fedotllm /path/to/your/task/directory --presets best_quality
+fedotllm run /path/to/your/task/directory --presets best_quality
 
 # Custom configuration
-fedotllm /path/to/your/task/directory --config-path config.yaml
+fedotllm run /path/to/your/task/directory --config-path config.yaml
 
 # Override specific settings
-fedotllm /path/to/your/task/directory -o automl.enabled=fedot -o time_limit=7200
+fedotllm run /path/to/your/task/directory -o automl.enabled=fedot -o time_limit=7200
 ```
 
 ### Enable or configure CAAFE (optional)
@@ -100,7 +100,7 @@ CAAFE performs LLM-driven feature engineering and currently supports classificat
 uv sync --group caafe
 
 # Run with CAAFE enabled (default), customizing parameters on the fly
-fedotllm /path/to/task \
+fedotllm run /path/to/task \
   -o "feature_transformers.enabled_models=[CAAFE]" \
   -o "feature_transformers.models.CAAFE.num_iterations=5" \
   -o "feature_transformers.models.CAAFE.optimization_metric=roc" \
@@ -120,6 +120,19 @@ Your task directory should contain:
 
 - `medium_quality`: Fast execution with good performance
 - `best_quality`: Maximum accuracy (default)
+
+## 🐳 Production Deployment
+
+Build and run the Streamlit UI on a server with Docker Compose:
+
+```bash
+cp .env.production.example .env.production
+# fill in the required API keys
+docker compose up -d --build
+```
+
+The compose setup exposes port `8501` by default and persists uploaded datasets and
+trained artifacts in named Docker volumes.
 
 ## 🙌 Acknowledgement
 Our implementation adapts code from [AutoGluon Assistant](https://github.com/autogluon/autogluon-assistant). We thank authors of this project for providing high quality open source code!

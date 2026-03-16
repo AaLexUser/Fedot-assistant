@@ -1,6 +1,9 @@
 # Project configuration
 UV = uv
 
+# Detect Docker Compose command (prefer V2 plugin, fall back to V1 standalone)
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
+
 # Colors for output
 BLUE = \033[34m
 GREEN = \033[32m
@@ -42,3 +45,34 @@ format: ## Format code and organize imports with ruff
 .PHONY: quality
 quality: format lint-fix ## Run all quality checks
 	@echo "$(GREEN)All quality checks completed!$(NC)"
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+
+.PHONY: docker-up
+docker-up: ## Start Docker containers with docker-compose
+	@echo "$(BLUE)Starting Docker containers...$(NC)"
+	$(DOCKER_COMPOSE) up -d
+	@echo "$(GREEN)Containers started!$(NC)"
+
+.PHONY: docker-down
+docker-down: ## Stop and remove Docker containers
+	@echo "$(BLUE)Stopping Docker containers...$(NC)"
+	$(DOCKER_COMPOSE) down
+	@echo "$(GREEN)Containers stopped!$(NC)"
+
+.PHONY: docker-logs
+docker-logs: ## View Docker container logs
+	@echo "$(BLUE)Showing Docker logs...$(NC)"
+	$(DOCKER_COMPOSE) logs -f
+
+.PHONY: docker-shell
+docker-shell: ## Open a shell inside the container
+	@echo "$(BLUE)Connecting to container shell...$(NC)"
+	$(DOCKER_COMPOSE) exec fedotllm bash
+
+.PHONY: docker-exec
+docker-exec: ## Execute a command in the container (use with CMD="<command>")
+	@echo "$(BLUE)Executing command in container...$(NC)"
+	$(DOCKER_COMPOSE) exec fedotllm $(CMD)

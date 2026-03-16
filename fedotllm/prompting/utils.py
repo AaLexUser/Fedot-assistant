@@ -2,6 +2,7 @@ import difflib
 import json
 import logging
 import re
+from collections import defaultdict
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, Optional
 
@@ -54,26 +55,40 @@ def _resolve_valid_value(
     """
     parsed_normalized = _normalize_pathlike(parsed_value).removeprefix("./")
     valid_values_list = list(valid_values)
+    valid_value_strings = [str(valid_value) for valid_value in valid_values_list]
+    basename_to_values: dict[str, list[str]] = defaultdict(list)
 
-    for valid_value in valid_values_list:
-        valid_normalized = _normalize_pathlike(str(valid_value))
+    for valid_value, valid_value_string in zip(valid_values_list, valid_value_strings):
+        valid_normalized = _normalize_pathlike(valid_value_string)
+        basename_to_values[PurePosixPath(valid_normalized).name].append(
+            valid_value_string
+        )
         if valid_normalized == parsed_normalized:
-            return str(valid_value)
+            return valid_value_string
         if valid_normalized.endswith(f"/{parsed_normalized}"):
-            return str(valid_value)
+            return valid_value_string
 
     basename_matches = [
-        str(valid_value)
-        for valid_value in valid_values_list
-        if PurePosixPath(_normalize_pathlike(str(valid_value))).name
+        valid_value_string
+        for valid_value_string in valid_value_strings
+        if PurePosixPath(_normalize_pathlike(valid_value_string)).name
         == PurePosixPath(parsed_normalized).name
     ]
     if len(basename_matches) == 1:
         return basename_matches[0]
 
-    close_matches = difflib.get_close_matches(parsed_value, valid_values_list)
+    close_matches = difflib.get_close_matches(parsed_normalized, valid_value_strings)
     if close_matches:
         return str(close_matches[0])
+
+    basename_close_matches = difflib.get_close_matches(
+        PurePosixPath(parsed_normalized).name,
+        list(basename_to_values.keys()),
+    )
+    if basename_close_matches:
+        close_basename_matches = basename_to_values[basename_close_matches[0]]
+        if len(close_basename_matches) == 1:
+            return close_basename_matches[0]
 
     return None
 
@@ -110,7 +125,8 @@ def parse_json(raw_reply: str) -> Optional[Dict[str, Any]]:
 
     raw_reply = raw_reply.strip()
     # Case 1: Check if the JSON is enclosed in triple backticks
-    json_match = re.search(r"\{.*\}|```(?:json)?\s*(.*?)```", raw_reply, re.DOTALL)
+    # Use non-greedy pattern \{.*?\} to match only the first complete JSON object
+    json_match = re.search(r"\{.*?\}|```(?:json)?\s*(.*?)```", raw_reply, re.DOTALL)
     if json_match:
         if json_match.group(1):
             reply_str = json_match.group(1).strip()
@@ -152,6 +168,9 @@ def check_json_values(
     """
     if valid_values is not None:
         for key, parsed_value in parsed_json.items():
+            # Skip validation for reasoning fields - they contain free-form text
+            if "reasoning" in key:
+                continue
             # Currently only support single parsed value
             if isinstance(parsed_value, list) and len(parsed_value) == 1:
                 parsed_value = parsed_value[0]

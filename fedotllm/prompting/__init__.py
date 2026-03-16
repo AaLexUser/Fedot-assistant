@@ -1,5 +1,4 @@
 from .prompt_generator import (
-    DataFileNamePromptGenerator,
     DescriptionFileNamePromptGenerator,
     EvalMetricPromptGenerator,
     ForecastLengthPromptGenerator,
@@ -7,10 +6,13 @@ from .prompt_generator import (
     OutputIDColumnPromptGenerator,
     ProblemTypePromptGenerator,
     PromptGenerator,
+    SampleSubmissionDataFileNamePromptGenerator,
     StaticFeaturesFileNamePromptGenerator,
     TaskTypePromptGenerator,
+    TestDataFileNamePromptGenerator,
     TestIDColumnPromptGenerator,
     TimestampColumnPromptGenerator,
+    TrainDataFileNamePromptGenerator,
     TrainIDColumnPromptGenerator,
 )
 
@@ -18,7 +20,9 @@ __all__ = [
     "PromptGenerator",
     "TaskTypePromptGenerator",
     "DescriptionFileNamePromptGenerator",
-    "DataFileNamePromptGenerator",
+    "TrainDataFileNamePromptGenerator",
+    "TestDataFileNamePromptGenerator",
+    "SampleSubmissionDataFileNamePromptGenerator",
     "LabelColumnPromptGenerator",
     "ProblemTypePromptGenerator",
     "TimestampColumnPromptGenerator",

@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 from langfuse.decorators import observe
 from omegaconf import DictConfig
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from fedotllm.utils.configs import load_config
 
@@ -51,7 +56,10 @@ class AssistantChatOpenAI:
         }
 
     @retry(
-        stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10)
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((RuntimeError,)),
+        reraise=True,
     )
     @observe()
     def invoke(self, messages: List[Dict[str, str]]):
@@ -59,7 +67,7 @@ class AssistantChatOpenAI:
             messages=messages,
             model=self.model,
             temperature=self.temperature,
-            max_completion_tokens=self.max_tokens,
+            # max_completion_tokens=self.max_tokens,
         )
 
         if getattr(response, "error", None):
@@ -77,6 +85,8 @@ class AssistantChatOpenAI:
         )
         content = getattr(getattr(choices[0], "message", None), "content", None)
         if content is None:
+            # Log response details for debugging before retrying
+            logger.warning(f"LLM response missing content. Response: {response}")
             raise RuntimeError("LLM response did not include message content")
 
         self.input_ += prompt_tokens

@@ -13,18 +13,21 @@ from .constants import TABULAR, TIME_SERIES
 from .llm import AssistantChatOpenAI
 from .task import PredictionTask
 from .task_inference import (
-    DataFileNameInference,
     DescriptionFileNameInference,
+    DropIDColumnInference,
     EvalMetricInference,
     ForecastHorizonInference,
     LabelColumnInference,
     OutputIDColumnInference,
     ProblemTypeInference,
+    SampleSubmissionDataFileNameInference,
     StaticFeaturesFileNameInference,
     TaskInference,
     TaskTypeInference,
+    TestDataFileNameInference,
     TestIDColumnInference,
     TimestampColumnInference,
+    TrainDataFileNameInference,
     TrainIDColumnInference,
 )
 from .utils import get_feature_transformers_config
@@ -102,18 +105,19 @@ class PredictionAssistant:
         logger.info("Task understanding starts...")
         task_inference_preprocessors = [
             DescriptionFileNameInference,
-            DataFileNameInference,
+            TrainDataFileNameInference,
+            TestDataFileNameInference,
+            SampleSubmissionDataFileNameInference,
+            OutputIDColumnInference,
+            TrainIDColumnInference,
+            TestIDColumnInference,
             LabelColumnInference,
             TaskTypeInference,
             ProblemTypeInference,
         ]
 
         if self.config.detect_and_drop_id_column:
-            task_inference_preprocessors += [
-                OutputIDColumnInference,
-                TrainIDColumnInference,
-                TestIDColumnInference,
-            ]
+            task_inference_preprocessors += [DropIDColumnInference]
 
         if self.config.infer_eval_metric:
             task_inference_preprocessors += [EvalMetricInference]
@@ -122,7 +126,7 @@ class PredictionAssistant:
 
         # Task type specific
 
-        if task.problem_type == TIME_SERIES:
+        if task.task_type == TIME_SERIES or task.problem_type == TIME_SERIES:
             timeseries_inference_preprocessors = [
                 TimestampColumnInference,
                 StaticFeaturesFileNameInference,

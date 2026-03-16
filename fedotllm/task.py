@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
+from pandas.tseries.frequencies import to_offset
 
 from fedotllm.tabular import TabularDataset, load_pd
 
@@ -101,7 +103,6 @@ class PredictionTask:
             raise ValueError(
                 f"Dataset type {dataset_key} not found for task {self.metadata.get('name', 'Unknown')}"
             )
-
         dataset = self.dataset_mapping[dataset_key]
         if dataset is None:
             return None
@@ -149,6 +150,10 @@ class PredictionTask:
                 raise TypeError(f"Unsupported type for dataset_mapping: {type(v)}")
 
     @property
+    def description(self) -> Optional[str]:
+        return self.metadata.get("description", "")
+
+    @property
     def task_type(self) -> Optional[str]:
         return self.metadata["task_type"] or self._find_task_type_in_description()
 
@@ -168,7 +173,11 @@ class PredictionTask:
 
     @property
     def test_data(self) -> TabularDataset:
-        return self.load_task_data(TEST)
+        test_data = self.load_task_data(TEST)
+        if test_data is None:
+            if self.task_type == TIME_SERIES:
+                return self._create_time_series_test_data()
+        return test_data
 
     @test_data.setter
     def test_data(self, data: Union[str, Path, TabularDataset]) -> None:
@@ -225,14 +234,20 @@ class PredictionTask:
         self.metadata["forecast_horizon"] = data
 
     @property
-    def output_columns(self) -> List[str]:
-        if self.sample_submission_data is None:
-            if self.label_column:
-                return [self.label_column]
-            else:
-                return None
-        else:
-            return self.sample_submission_data.columns.to_list()
+    def output_columns(self) -> Optional[List[str]]:
+        sample_submission_data = self.sample_submission_data
+        if sample_submission_data is not None:
+            return sample_submission_data.columns.to_list()
+
+        label_column = self.metadata.get("label_column")
+        if not label_column:
+            return None
+
+        if self.task_type == TIME_SERIES:
+            timestamp_column = self.metadata.get("timestamp_column")
+            return [col for col in [timestamp_column, label_column] if col]
+
+        return [label_column]
 
     @property
     def label_column(self) -> Optional[str]:
@@ -264,6 +279,8 @@ class PredictionTask:
 
     @property
     def columns_in_train_but_not_test(self) -> List[str]:
+        if self.test_data is None:
+            return []
         return list(set(self.train_data.columns) - set(self.test_data.columns))
 
     @property
@@ -334,11 +351,12 @@ class PredictionTask:
         return self._find_text_columns_in_train()
 
     def _infer_label_column_from_sample_submission_data(self) -> Optional[str]:
-        if self.output_columns is None:
+        sample_submission_data = self.sample_submission_data
+        if sample_submission_data is None:
             return None
 
         # Assume the first output column is the ID column and ignore it
-        relevant_output_cols = self.output_columns[1:]
+        relevant_output_cols = sample_submission_data.columns.to_list()[1:]
         if not relevant_output_cols:
             return None
 
@@ -377,6 +395,7 @@ class PredictionTask:
                 for col in self.train_data.columns
                 if _column_contains_text(self.train_data[col])
                 and col != self.images_column
+                and col != self.train_id_column
             ]
         return []
 
@@ -390,6 +409,13 @@ class PredictionTask:
             ]
             if len(datetime_cols) > 0:
                 return datetime_cols[0]
+            for column in self.train_data.columns:
+                if self.label_column and column == self.label_column:
+                    continue
+
+                parsed = pd.to_datetime(self.train_data[column], errors="coerce")
+                if not parsed.empty and parsed.notna().all():
+                    return column
         return None
 
     def _find_path_column_in_train(self) -> Optional[str]:
@@ -424,6 +450,37 @@ class PredictionTask:
             return BINARY
         else:
             return None
+
+    def _infer_time_series_frequency(self, index: pd.DatetimeIndex) -> pd.DateOffset:
+        if len(index) < 2:
+            raise ValueError(
+                "At least two timestamps are required to infer forecast frequency."
+            )
+
+        inferred = pd.infer_freq(index)
+        if inferred is not None:
+            return to_offset(inferred)
+
+        diffs = index.to_series().diff().dropna()
+        if diffs.empty:
+            raise ValueError("Could not infer forecast frequency from timestamps.")
+
+        return to_offset(diffs.mode().iloc[0])
+
+    def _create_time_series_test_data(self) -> TabularDataset:
+        history_index = pd.DatetimeIndex(
+            self.train_data[self.timestamp_column], name=self.timestamp_column
+        )
+        frequency = self._infer_time_series_frequency(history_index)
+        forecast_index = pd.date_range(
+            start=history_index[-1] + frequency,
+            periods=self.forecast_horizon,
+            freq=frequency,
+            name=self.timestamp_column,
+        )
+        return pd.DataFrame(
+            index=forecast_index, columns=[self.label_column], data=np.nan
+        )
 
 
 def _safe_int_conversion(string_value: str):

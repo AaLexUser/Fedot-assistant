@@ -3,14 +3,20 @@ from functools import partial
 from pathlib import Path
 from typing import Union
 
+import pandas as pd
+
 from ..constants import (
     DATA_EXTENSIONS,
     METRICS_DESCRIPTION,
+    MULTICLASS,
+    MULTIMODAL,
     NO_FILE_IDENTIFIED,
     NO_ID_COLUMN_IDENTIFIED,
     NO_TIMESTAMP_COLUMN_IDENTIFIED,
-    PROBLEM_TYPES,
+    REGRESSION,
+    TABULAR,
     TASK_TYPES,
+    TIME_SERIES,
 )
 from ..utils import is_text_file
 from .utils import get_outer_columns, parse_and_check_json
@@ -26,7 +32,7 @@ class PromptGenerator(ABC):
     @property
     def system_prompt(self):
         return (
-            "You are an expert assistant that parses information about data science tasks,"
+            "You are an expert assistant that parses information about data science tasks, "
             "such as data science competitions."
         )
 
@@ -49,8 +55,8 @@ class PromptGenerator(ABC):
             "Important:\n"
             "1. Return only valid JSON. No extra explanations, text, or comments.\n"
             "2. Ensure that the output can be parsed by a JSON parser directly.\n"
-            "3. Do not include any non-JSON text or formatting outside the JSON object."
-            '4. An example is \{"<provided_field>": "<correct_value_for_the_field>"\}'
+            "3. Do not include any non-JSON text or formatting outside the JSON object.\n"
+            '4. An example is {"<provided_field>": "<correct_value_for_the_field>"}'
         )
 
     def generate_chat_prompt(self):
@@ -64,18 +70,114 @@ class PromptGenerator(ABC):
     def create_parser(self):
         return partial(parse_and_check_json, expected_keys=self.fields)
 
+    def read_file_safely(self, filename: Path) -> Union[str, None]:
+        try:
+            return filename.read_text()
+        except UnicodeDecodeError:
+            return None
+
+    def build_file_preview_prompt(
+        self, filenames: list[Path], header: str, allowed_suffixes: tuple[str, ...] = ()
+    ) -> str:
+        file_content_prompts = f"{header}\n\n"
+        for filename in filenames:
+            if is_text_file(filename) or filename.suffix in allowed_suffixes:
+                content = self.read_file_safely(filename)
+                if content is None:
+                    continue
+
+                truncated_contents = content[:100].strip()
+                if len(content) > 100:
+                    truncated_contents += "..."
+                file_content_prompts += f"File:\n\n{filename.relative_to(Path.cwd())} Truncated Content:\n{truncated_contents}\n\n"
+        return file_content_prompts
+
 
 class TaskTypePromptGenerator(PromptGenerator):
-    fields = ["task_type"]
+    fields = ["reasoning", "task_type"]
+
+    def __init__(
+        self, data_description: str, train_data: pd.DataFrame, label_column: str
+    ):
+        super().__init__(data_description)
+        self.train_data = train_data
+        self.label_column = label_column
+
+    @property
+    def train_sample_string(self) -> str:
+        train_sample = self.train_data.head(10).to_markdown(index=False)
+        return f"Train sample:\n\n{train_sample}"
+
+    @property
+    def label_column_string(self) -> str:
+        if self.label_column is not None:
+            return f"Label column: {self.label_column}"
+        return "No label column found."
 
     def generate_prompt(self) -> str:
+        task_type_instructions = f"""DETERMINE THE TASK TYPE
+
+Analyze the data sample and description to identify the correct task_type from these options: {", ".join(TASK_TYPES)}
+
+DECISION RULES (apply in this exact priority order):
+
+1. TIME SERIES CHECK
+   Return "{TIME_SERIES}" if ALL the following conditions are met:
+   - There is a column containing dates, timestamps, or time values
+   - The task involves forecasting or predicting future values
+   - The data describes measurements taken over time
+   - Look at the train sample: if rows represent sequential time periods, this is time_series
+
+2. MULTIMODAL CHECK
+   Return "{MULTIMODAL}" if you see:
+   - Columns containing long text passages (sentences, paragraphs)
+   - Columns with file paths to images (e.g., "/path/to/image.jpg")
+   - Columns with mixed data types like text + structured data combined
+
+3. DEFAULT
+   Only return "{TABULAR}" if NEITHER of the above conditions apply.
+"""
+
         return "\n\n".join(
             [
                 self.basic_intro_prompt,
                 self.data_description_prompt,
+                self.label_column_string,
+                self.train_sample_string,
+                task_type_instructions,
+                self.get_field_parsing_prompt(),
+            ]
+        )
+
+
+class ProblemTypePromptGenerator(PromptGenerator):
+    fields = ["reasoning", "problem_type"]
+
+    def __init__(
+        self, data_description: str, train_data: pd.DataFrame, label_column: str
+    ):
+        super().__init__(data_description)
+        self.train_data = train_data
+        self.label_column = label_column
+
+    @property
+    def label_train_sample(self) -> str:
+        label_sample = (
+            self.train_data[self.label_column].sample(n=10).to_markdown(index=False)
+        )
+        return f"Label column sample:\n\n{label_sample}"
+
+    def generate_prompt(self) -> str:
+        problem_types = [MULTICLASS, REGRESSION]
+        return "\n\n".join(
+            [
+                self.basic_intro_prompt,
+                self.data_description_prompt,
+                self.label_train_sample,
                 (
-                    "Based on the information provided, identify the correct task_type to be used "
-                    f"from among these KEYS: {', '.join(TASK_TYPES)}"
+                    "Based on the information provided, identify the correct problem_type to be used "
+                    f"from among these KEYS: {', '.join(problem_types)}\n\n"
+                    f"Response with the value {MULTICLASS} if the label is categorical, or {REGRESSION} if the label is continuous."
                 ),
                 self.get_field_parsing_prompt(),
             ]
@@ -83,30 +185,19 @@ class TaskTypePromptGenerator(PromptGenerator):
 
 
 class DescriptionFileNamePromptGenerator(PromptGenerator):
-    fields = ["data_description_file", "evaluation_description_file"]
+    fields = ["data_description_file"]
 
     def __init__(self, filenames: list):
         super().__init__()
         self.filenames = filenames
 
-    def read_file_safely(self, filename: Path) -> Union[str, None]:
-        try:
-            return filename.read_text()
-        except UnicodeDecodeError:
-            return None
-
     def generate_prompt(self) -> str:
-        file_content_prompts = "# Available Files And Content in The File\n\n"
-        for filename in map(Path, self.filenames):
-            if is_text_file(filename):
-                content = self.read_file_safely(filename)
-                if content is not None:
-                    truncated_contents = content[:100].strip()
-                    if len(content) > 100:
-                        truncated_contents += "..."
-                    file_content_prompts += f"File:\n\n{filename} Truncated Content:\n{truncated_contents}\n\n"
+        file_content_prompts = self.build_file_preview_prompt(
+            filenames=list(map(Path, self.filenames)),
+            header="# Available Files And Content in The File",
+        )
         file_content_prompts += (
-            "Please return the full path of the file to describe the problem settings, "
+            "Please return the full path of the file that describes the problem settings, "
             f"and response with the value {NO_FILE_IDENTIFIED} if there's no such file."
         )
         return "\n\n".join(
@@ -118,83 +209,73 @@ class DescriptionFileNamePromptGenerator(PromptGenerator):
         )
 
 
-class DataFileNamePromptGenerator(PromptGenerator):
-    fields = ["train_data", "test_data", "sample_submission_data"]
+class DataFilePromptGenerator(PromptGenerator):
+    """Base for prompt generators that identify a single data file from a list of candidates."""
 
-    def __init__(self, data_description: str, filenames: list):
+    question: str = ""
+
+    def __init__(self, data_description: str, filenames: list[Path]):
         super().__init__(data_description)
         self.filenames = filenames
 
     def generate_prompt(self) -> str:
-        file_content_prompts = "# Available Data File And Columns in The File\n\n"
-        for filename in self.filenames:
-            file_content_prompts += f"File:\n\n{filename}"
-
-        file_content_prompts += (
-            f"Based on the data description, what are the training, test, and output data? "
-            "The output file may contain keywords such as benchmark, submission, or output. "
-            "Please return the full path of the data files as provided, "
-            f"and response with the value {NO_FILE_IDENTIFIED} if there's no such File."
+        file_list = self.build_file_preview_prompt(
+            filenames=self.filenames,
+            header="# Available Data Files",
+            allowed_suffixes=tuple(DATA_EXTENSIONS),
         )
-
+        file_list += (
+            f"\n{self.question} "
+            "Please return the full path of the data file as provided, "
+            f"and respond with the value {NO_FILE_IDENTIFIED} if there's no such file."
+        )
         return "\n\n".join(
             [
                 self.basic_intro_prompt,
-                file_content_prompts,
+                self.data_description_prompt,
+                file_list,
                 self.get_field_parsing_prompt(),
             ]
         )
 
 
-class StaticFeaturesFileNamePromptGenerator(PromptGenerator):
+class TrainDataFileNamePromptGenerator(DataFilePromptGenerator):
+    fields = ["train_data"]
+    question = (
+        "Based on the data description and file previews, which file contains the training data? "
+        "The training file is usually the largest and contains both feature columns and the target/label column. "
+        "Look for filenames containing 'train' or files whose column headers include a label/target."
+    )
+
+
+class TestDataFileNamePromptGenerator(DataFilePromptGenerator):
+    fields = ["test_data"]
+    question = (
+        "Based on the data description and file previews, which file contains the test data? "
+        "The test file has similar column names to the training file but lacks the target/label column. "
+        "Look for filenames containing 'test' or files with fewer columns than the training file."
+    )
+
+
+class SampleSubmissionDataFileNamePromptGenerator(DataFilePromptGenerator):
+    fields = ["sample_submission_data"]
+    question = (
+        "Based on the data description and file previews, which file is the sample submission (output) file? "
+        "The submission file typically has very few columns — usually just an ID column and the target column. "
+        "Look for filenames containing 'submission', 'sample', 'output', or 'benchmark'."
+    )
+
+
+class StaticFeaturesFileNamePromptGenerator(DataFilePromptGenerator):
     fields = ["static_features_data"]
-
-    def __init__(
-        self, data_description: str, filenames: list, data_description_file: str
-    ):
-        super().__init__(data_description)
-        self.data_description_file = data_description_file
-        self.filenames = filenames
-
-    def read_file_safely(self, filename: Path) -> Union[str, None]:
-        try:
-            return filename.read_text()
-        except UnicodeDecodeError:
-            return None
-
-    def generate_prompt(self) -> str:
-        file_content_prompts = "# Available Data File And Content in The File\n\n"
-        for filename in map(Path, self.filenames):
-            if is_text_file(filename):
-                content = self.read_file_safely(filename)
-                if content is not None:
-                    truncated_contents = content[:100].strip()
-                    if len(content) > 100:
-                        truncated_contents += "..."
-                    file_content_prompts += f"File:\n\n{filename} Truncated Content:\n{truncated_contents}\n\n"
-
-        file_content_prompts += (
-            f"Based on the data description, what is the static features data? "
-            "Static features are the time-independent attribures (metadata) of a time series. "
-            "These may include information such as:\n"
-            "- location, where the time series was recorded (country, state, city)\n"
-            "- fixed properties of a product (brand name, color, size, weight)\n"
-            "- store ID or product ID"
-            "The file contains a table with features."
-            "The static features file may contain keywords such as 'metadata', 'static_features'"
-            f"File can't be {self.data_description_file}."
-            f"File extention must be in {', '.join(DATA_EXTENSIONS)} "
-            "Please return the full path of the data files as provided, "
-            f"and response with the value {NO_FILE_IDENTIFIED} if there's no such File."
-        )
-
-        return "\n\n".join(
-            [
-                self.basic_intro_prompt,
-                file_content_prompts,
-                self.get_field_parsing_prompt(),
-            ]
-        )
+    question = (
+        "Based on the data description and file previews, which file contains the static features data? "
+        "Static features are the time-independent attributes (metadata) of a time series. "
+        "These may include information such as: location where the time series was recorded, "
+        "fixed properties of a product (brand, color, size), store ID or product ID. "
+        "The file contains a table with features. "
+        "Look for filenames containing 'static', 'metadata', or 'features'."
+    )
 
 
 class LabelColumnPromptGenerator(PromptGenerator):
@@ -212,23 +293,6 @@ class LabelColumnPromptGenerator(PromptGenerator):
                 (
                     "Based on the data description, which one of these columns is likely to be the label column:"
                     f"\n{', '.join(self.column_names)}"
-                ),
-                self.get_field_parsing_prompt(),
-            ]
-        )
-
-
-class ProblemTypePromptGenerator(PromptGenerator):
-    fields = ["problem_type"]
-
-    def generate_prompt(self) -> str:
-        return "\n\n".join(
-            [
-                self.basic_intro_prompt,
-                self.data_description_prompt,
-                (
-                    "Based on the information provided, identify the correct problem_type to be used "
-                    f"from among these KEYS: {', '.join(PROBLEM_TYPES)}"
                 ),
                 self.get_field_parsing_prompt(),
             ]
@@ -258,20 +322,30 @@ class TimestampColumnPromptGenerator(PromptGenerator):
 
 
 class ForecastLengthPromptGenerator(PromptGenerator):
-    fields = ["forecast_horizon"]
+    fields = ["reasoning", "forecast_horizon"]
 
     def __init__(self, data_description: str):
         super().__init__(data_description)
 
     def generate_prompt(self) -> str:
+        instructions = """INSTRUCTIONS:
+Read the Data Description above and extract the forecast horizon (number of time steps to predict).
+
+STEP 1: Find the phrase about predicting/forecasting ahead. Examples:
+- "predict for NUMBER days" 
+- "forecast NUMBER weeks ahead"
+- "next NUMBER hours"
+- "на NUMBER дня вперед" (Russian: for NUMBER days ahead)
+
+STEP 2: Extract ONLY the NUMBER before the time unit.
+
+STEP 3: Return that number as forecast_horizon."""
+
         return "\n\n".join(
             [
                 self.basic_intro_prompt,
                 self.data_description_prompt,
-                (
-                    "Based on the data description, what is the forecast horizon (prediction_length) according to the task?"
-                    "Please return an integer number, and response with the value {DEFAULT_FORECAST_HORIZON} if there's no information provided."
-                ),
+                instructions,
                 self.get_field_parsing_prompt(),
             ]
         )

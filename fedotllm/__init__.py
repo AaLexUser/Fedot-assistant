@@ -1,5 +1,8 @@
 import datetime
 import logging
+import os
+import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -41,7 +44,7 @@ def make_prediction_outputs(
         output_ids = task.sample_submission_data[task.output_id_column]
 
         if not test_ids.equals(output_ids):
-            print("Warming: Test IDs and output IDs do not match!")
+            print("WARNING: Test IDs and output IDs do not match!")
 
         # Ensure test ID column is included
         if task.test_id_column not in outputs.columns:
@@ -53,20 +56,35 @@ def make_prediction_outputs(
     missing_columns = [col for col in task.output_columns if col not in outputs.columns]
     if missing_columns:
         print(
-            "Warming: The following columns are not in predictions and will be treated as ID columns:"
+            "WARNING: The following columns are not in predictions and will be treated as ID columns:"
             f"{missing_columns}"
         )
 
         for col in missing_columns:
-            if task.test_data is not None and col in task.test_data.columns:
-                # Copy from test data if available
-                outputs[col] = task.test_data[col]
-                print(f"Warming: Copied from test data for column '{col}'")
+            if task.test_data is not None:
+                if col in task.test_data.columns:
+                    # Copy from test data if available as a column
+                    outputs[col] = task.test_data[col]
+                    print(f"WARNING: Copied from test data for column '{col}'")
+                elif (
+                    col == task.test_data.index.name
+                    or col in task.test_data.index.names
+                ):
+                    # Copy from test data index (e.g., timestamp column in time series)
+                    outputs[col] = task.test_data.index
+                    print(f"WARNING: Copied from test data index for column '{col}'")
+                else:
+                    # Generate unique integer values
+                    outputs[col] = range(len(outputs))
+                    print(
+                        f"WARNING: Generated unique integer values for column '{col}'"
+                        "as it was not found in test data"
+                    )
             else:
                 # Generate unique integer values
                 outputs[col] = range(len(outputs))
                 print(
-                    f"Warming: Generated unique integer values for column '{col}'"
+                    f"WARNING: Generated unique integer values for column '{col}'"
                     "as it was not found in test data"
                 )
 
@@ -74,6 +92,59 @@ def make_prediction_outputs(
     outputs = outputs[task.output_columns]
 
     return outputs
+
+
+def get_ui_path() -> str:
+    """Get the absolute path to the UI directory using package resources"""
+    try:
+        from importlib.resources import files
+
+        package_paths = list(files("fedotllm.ui").iterdir())
+        ui_path = next(str(p.parent) for p in package_paths if "app.py" in str(p))
+        return ui_path
+    except Exception:
+        # Fallback for development environment
+        return str(Path(__file__).parent / "ui")
+
+
+def launch_ui(port: int = typer.Option(8501, help="Port to run the UI on")):
+    """Launch the FedotLLM Web UI"""
+    try:
+        import streamlit  # noqa: F401
+    except Exception as e:
+        rprint(f"[red]Error UI not installed: {str(e)}[/red]")
+        sys.exit(1)
+
+    ui_dir = get_ui_path()
+    app_path = os.path.join(ui_dir, "app.py")
+
+    if not os.path.exists(app_path):
+        rprint(f"[red]Error: UI file not found at {app_path}[/red]")
+        sys.exit(1)
+
+    # Change working directory to UI directory before running streamlit
+    original_dir = os.getcwd()
+    os.chdir(ui_dir)
+
+    cmd = [
+        "streamlit",
+        "run",
+        "app.py",
+        "--server.port",
+        str(port),
+    ]  # Use relative path since we changed directory
+
+    try:
+        rprint(f"[green]Launching FedotLLM UI on port {port}...[/green]")
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        rprint("\n[yellow]Shutting down UI server...[/yellow]")
+    except Exception as e:
+        rprint(f"[red]Error launching UI: {str(e)}[/red]")
+    finally:
+        # Change back to original directory
+        os.chdir(original_dir)
+        sys.exit(1)
 
 
 @dataclass
@@ -126,7 +197,9 @@ def run_assistant(
             help="Override config values. Format: key=value or key.nested=value. Can be used multiple times.",
         ),
     ] = None,
-    output_filename: Annotated[Optional[str], typer.Option(help="Output File")] = "",
+    output_filename: Annotated[
+        Optional[str], typer.Option("--output-filename", help="Output CSV file path")
+    ] = None,
 ) -> Tuple[PredictionTask, PredictionAssistant]:
     start_time = time.time()
 
@@ -181,16 +254,14 @@ def run_assistant(
 
         predictions = assistant.predict(task)
 
-        if not output_filename:
+        if output_filename is None:
             output_filename = (
                 f"fedotllm-{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
             )
         with open(output_filename, "w") as fp:
             make_prediction_outputs(task, predictions).to_csv(fp, index=False)
 
-        rprint(
-            f"[green] Prediction complete! Outputs written to {output_filename}[/green]"
-        )
+        print(f"Prediction complete! Outputs written to {output_filename}")
 
     if config.save_artifacts.enabled:
         artifacts_dir_name = f"{task.metadata['name']}_artifacts"
@@ -205,7 +276,7 @@ def run_assistant(
         assistant.predictor.save_artifacts(str(full_save_path), task)
 
         rprint(
-            f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}"
+            f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}[/green]"
         )
 
     return task, assistant
@@ -213,7 +284,8 @@ def run_assistant(
 
 def main():
     app = typer.Typer()
-    app.command()(run_assistant)
+    app.command("run")(run_assistant)
+    app.command("ui")(launch_ui)
     app()
 
 

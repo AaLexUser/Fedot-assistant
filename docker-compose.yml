@@ -1,0 +1,32 @@
+services:
+  fedotllm:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fedot-assistant:latest
+    pull_policy: never
+    container_name: fedot-assistant
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      FEDOTLLM_UI_DATA_DIR: /app/data/user_data
+      FEDOTLLM_ARTIFACTS_DIR: /app/data/artifacts
+      FEDOTLLM_UI_SAMPLE_DATASET_DIR: /app/fedotllm/ui/sample_dataset
+    ports:
+      - "${FEDOTLLM_PORT:-8501}:8501"
+    volumes:
+      - fedotllm-user-data:/app/data/user_data
+      - fedotllm-artifacts:/app/data/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  fedotllm-user-data:
+  fedotllm-artifacts:
+

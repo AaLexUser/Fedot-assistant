@@ -2,23 +2,25 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 
-from autogluon.core.utils.utils import infer_problem_type
-
 from ..constants import (
-    CLASSIFICATION_PROBLEM_TYPES,
+    BINARY,
     DATA_EXTENSIONS,
+    DEFAULT_FORECAST_HORIZON,
     METRICS_BY_PROBLEM_TYPE,
     METRICS_DESCRIPTION,
     NO_FILE_IDENTIFIED,
     NO_ID_COLUMN_IDENTIFIED,
     NO_TIMESTAMP_COLUMN_IDENTIFIED,
+    OUTPUT,
     PROBLEM_TYPES,
     TASK_TYPES,
+    TEST,
+    TIME_SERIES,
+    TRAIN,
 )
 from ..exceptions import OutputParserException
 from ..llm import AssistantChatOpenAI
 from ..prompting import (
-    DataFileNamePromptGenerator,
     DescriptionFileNamePromptGenerator,
     EvalMetricPromptGenerator,
     ForecastLengthPromptGenerator,
@@ -26,10 +28,13 @@ from ..prompting import (
     OutputIDColumnPromptGenerator,
     ProblemTypePromptGenerator,
     PromptGenerator,
+    SampleSubmissionDataFileNamePromptGenerator,
     StaticFeaturesFileNamePromptGenerator,
     TaskTypePromptGenerator,
+    TestDataFileNamePromptGenerator,
     TestIDColumnPromptGenerator,
     TimestampColumnPromptGenerator,
+    TrainDataFileNamePromptGenerator,
     TrainIDColumnPromptGenerator,
 )
 from ..task import PredictionTask
@@ -37,12 +42,14 @@ from ..task import PredictionTask
 logger = logging.getLogger(__name__)
 
 
-def _get_tabular_filenames(paths: Iterable[Union[str, Path]]) -> List[str]:
-    return [str(path) for path in paths if Path(path).suffix.lower() in DATA_EXTENSIONS]
+def _get_tabular_filenames(paths: Iterable[Union[str, Path]]) -> List[Path]:
+    return [path for path in paths if Path(path).suffix.lower() in DATA_EXTENSIONS]
 
 
 class TaskInference:
     """Parses data and metadata of a task with the aid of an instruction-tuned LLM."""
+
+    max_parse_retries: int = 3
 
     def __init__(self, llm, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -51,15 +58,13 @@ class TaskInference:
         self.ignored_value: List[str] = []
 
     def initialize_task(self, task):
-        self.prompt_genetator: Optional[PromptGenerator] = None
+        self.prompt_generator: Optional[PromptGenerator] = None
         self.valid_values = None
 
     def log_value(self, key: str, value: Any, max_width: int = 1600) -> None:
         """Logs a key-value pair with formatted output"""
         if not value:
-            logger.info(
-                f"WARMING: Failed to identify the {key} of the task, it is set to None."
-            )
+            logger.info(f"WARNING: The {key} of the task, it is set to None.")
             return
 
         prefix = key
@@ -76,6 +81,8 @@ class TaskInference:
         self.initialize_task(task)
         parser_output = self._chat_and_parse_prompt_output()
         for k, v in parser_output.items():
+            if "reasoning" in k:
+                continue
             if v in self.ignored_value:
                 v = None
             self.log_value(k, v)
@@ -86,24 +93,55 @@ class TaskInference:
         return value
 
     def _chat_and_parse_prompt_output(self) -> Dict[str, str]:
-        try:
-            assert self.prompt_genetator is not None, (
-                "prompt_generator is not initialized"
-            )
-            chat_prompt = self.prompt_genetator.generate_chat_prompt()
-            logger.debug(f"LLM chat_prompt:\n{chat_prompt}")
-            output = self.llm.invoke(chat_prompt)
-            logger.debug(f"LLM output:\n{output}")
-            parsed_output = self.prompt_genetator.parser(
-                output,
-                valid_values=self.valid_values,
-                fallback_value=self.fallback_value,
-            )
-            return parsed_output
-        except OutputParserException as e:
-            logger.error(f"Failed to parse output: {e}")
-            logger.error(self.llm.describe())
-            raise e
+        assert self.prompt_generator is not None, "prompt_generator is not initialized"
+        chat_prompt = self.prompt_generator.generate_chat_prompt()
+        logger.debug(f"LLM chat_prompt:\n{chat_prompt}")
+
+        last_error = None
+        retry_temperatures = [0.3, 0.5]
+        original_temperature = self.llm.temperature
+
+        for attempt in range(self.max_parse_retries):
+            try:
+                if attempt > 0:
+                    temp = retry_temperatures[
+                        min(attempt - 1, len(retry_temperatures) - 1)
+                    ]
+                    self.llm.temperature = temp
+                    logger.warning(
+                        f"Retry {attempt}/{self.max_parse_retries - 1} "
+                        f"(temperature={temp}) after OutputParserException: {last_error}"
+                    )
+
+                output = self.llm.invoke(chat_prompt)
+                logger.debug(f"LLM output:\n{output}")
+                parsed_output = self.prompt_generator.parser(
+                    output,
+                    valid_values=self.valid_values,
+                    fallback_value=self.fallback_value,
+                )
+                return parsed_output
+            except OutputParserException as e:
+                last_error = e
+                chat_prompt = chat_prompt + [
+                    {"role": "assistant", "content": output},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your previous response could not be parsed: {e}\n"
+                            "Please fix the error and try again. "
+                            "Return only valid JSON with the correct keys and values."
+                        ),
+                    },
+                ]
+            finally:
+                self.llm.temperature = original_temperature
+
+        logger.error(
+            f"Failed to parse output after {self.max_parse_retries} attempts: {last_error}"
+        )
+        logger.error(self.llm.describe())
+        raise last_error
 
 
 class DescriptionFileNameInference(TaskInference):
@@ -113,7 +151,7 @@ class DescriptionFileNameInference(TaskInference):
         filenames = [str(path) for path in task.filepaths]
         self.valid_values = filenames + [NO_FILE_IDENTIFIED]
         self.fallback_value = NO_FILE_IDENTIFIED
-        self.prompt_genetator = DescriptionFileNamePromptGenerator(filenames=filenames)
+        self.prompt_generator = DescriptionFileNamePromptGenerator(filenames=filenames)
 
     def _read_descriptions(
         self, parser_output: Dict[str, Union[str, Iterable[str]]]
@@ -152,69 +190,134 @@ class DescriptionFileNameInference(TaskInference):
         return task
 
 
-class DataFileNameInference(TaskInference):
-    """Uses an LLM to locate the filenames of the train, test, and output data,
-    and assigns them to the respective properties of the task.
+class DataFileInference(TaskInference):
+    """Base class for inferences that identify a single data file.
+
+    Subclasses specify which files to exclude (already identified) and which
+    prompt generator to use.
     """
 
-    def initialize_task(self, task):
-        filenames = _get_tabular_filenames(task.filepaths)
+    prompt_generator_class = None
+
+    def _get_excluded_paths(self, task: PredictionTask) -> set:
+        """Return resolved paths of files already assigned to the task."""
+        return set()
+
+    def initialize_task(self, task: PredictionTask):
+        excluded = self._get_excluded_paths(task)
+        filenames = [
+            p
+            for p in _get_tabular_filenames(task.filepaths)
+            if p.resolve() not in excluded
+        ]
         self.valid_values = filenames + [NO_FILE_IDENTIFIED]
         self.fallback_value = NO_FILE_IDENTIFIED
         self.ignored_value = [NO_FILE_IDENTIFIED]
-        self.prompt_genetator = DataFileNamePromptGenerator(
+        self._remaining_filenames = filenames
+        self.prompt_generator = self.prompt_generator_class(
             data_description=task.metadata["description"], filenames=filenames
         )
 
+    def transform(self, task: PredictionTask) -> PredictionTask:
+        self.initialize_task(task)
+        if not self._remaining_filenames:
+            field = self.prompt_generator_class.fields[0]
+            self.log_value(field, None)
+            setattr(task, field, None)
+            return task
+        return super().transform(task)
 
-class StaticFeaturesFileNameInference(TaskInference):
-    """Uses an LLM to locate the filename of static features data"""
 
-    def initialize_task(self, task: PredictionTask):
-        exclude_files = [
-            path.resolve() for _, path in task.files_mapping.items() if path is not None
-        ]
-        filenames = _get_tabular_filenames(
-            path for path in task.filepaths if path.resolve() not in exclude_files
-        )
-        self.valid_values = filenames + [NO_FILE_IDENTIFIED]
-        self.fallback_value = NO_FILE_IDENTIFIED
-        self.ignored_value = [NO_FILE_IDENTIFIED]
-        self.prompt_genetator = StaticFeaturesFileNamePromptGenerator(
-            data_description=task.metadata["description"],
-            filenames=filenames,
-            data_description_file=task.data_description_file,
-        )
+class TrainDataFileNameInference(DataFileInference):
+    """Identifies the training data file."""
+
+    prompt_generator_class = TrainDataFileNamePromptGenerator
+
+
+class TestDataFileNameInference(DataFileInference):
+    """Identifies the test data file, excluding the already-identified train file."""
+
+    prompt_generator_class = TestDataFileNamePromptGenerator
+
+    def _get_excluded_paths(self, task: PredictionTask) -> set:
+        excluded = set()
+        if task.files_mapping.get(TRAIN) is not None:
+            excluded.add(task.files_mapping[TRAIN].resolve())
+        return excluded
+
+
+class SampleSubmissionDataFileNameInference(DataFileInference):
+    """Identifies the sample submission file, excluding train and test files."""
+
+    prompt_generator_class = SampleSubmissionDataFileNamePromptGenerator
+
+    def _get_excluded_paths(self, task: PredictionTask) -> set:
+        excluded = set()
+        for key in (TRAIN, TEST):
+            if task.files_mapping.get(key) is not None:
+                excluded.add(task.files_mapping[key].resolve())
+        return excluded
+
+
+class StaticFeaturesFileNameInference(DataFileInference):
+    """Identifies the static features file, excluding train, test, and output files."""
+
+    prompt_generator_class = StaticFeaturesFileNamePromptGenerator
+
+    def _get_excluded_paths(self, task: PredictionTask) -> set:
+        """Exclude train, test, and output files that are already identified."""
+        excluded = set()
+        for key in (TRAIN, TEST, OUTPUT):
+            if task.files_mapping.get(key) is not None:
+                excluded.add(task.files_mapping[key].resolve())
+        return excluded
 
 
 class TaskTypeInference(TaskInference):
     def initialize_task(self, task):
         self.valid_values = TASK_TYPES
-        self.prompt_genetator = TaskTypePromptGenerator(
-            data_description=task.metadata["description"]
+        self.prompt_generator = TaskTypePromptGenerator(
+            data_description=task.metadata["description"],
+            train_data=task.train_data,
+            label_column=task.label_column,
         )
 
 
-class LabelColumnInference(TaskInference):
+class ProblemTypeInference(TaskInference):
+    def initialize_task(self, task):
+        self.valid_values = PROBLEM_TYPES
+        self.prompt_generator = ProblemTypePromptGenerator(
+            data_description=task.metadata["description"],
+            train_data=task.train_data,
+            label_column=task.label_column,
+        )
+
     def transform(self, task: PredictionTask) -> PredictionTask:
-        if task.load_task_data("output") is not None and len(task.output_columns) > 1:
-            try:
-                label_column = task._infer_label_column_from_sample_submission_data()
-            except Exception:
-                label_column = None
-
-            if label_column:
-                self.log_value("label_column", label_column)
-                task.label_column = label_column
+        self.initialize_task(task)
+        if task.task_type == TIME_SERIES:
+            task.problem_type = TIME_SERIES
+            return task
+        if task.label_column is not None and task.train_data is not None:
+            unique_values = task.train_data[task.label_column].unique()
+            if len(unique_values) == 2:
+                task.problem_type = BINARY
                 return task
-
         return super().transform(task)
 
+
+class LabelColumnInference(TaskInference):
     def initialize_task(self, task):
         column_names = list(task.train_data.columns)
-        self.valid_values = column_names
-        self.prompt_genetator = LabelColumnPromptGenerator(
-            data_description=task.metadata["description"], column_names=column_names
+        # Exclude ID columns from being considered as label columns
+        id_columns = [
+            col
+            for col in [task.train_id_column, task.test_id_column]
+            if col is not None
+        ]
+        valid_columns = [col for col in column_names if col not in id_columns]
+        self.valid_values = valid_columns
+        self.prompt_generator = LabelColumnPromptGenerator(
+            data_description=task.metadata["description"], column_names=valid_columns
         )
 
 
@@ -222,7 +325,7 @@ class TimestampColumnInference(TaskInference):
     def initialize_task(self, task):
         column_names = list(task.train_data.columns)
         self.valid_values = column_names + [NO_TIMESTAMP_COLUMN_IDENTIFIED]
-        self.prompt_genetator = TimestampColumnPromptGenerator(
+        self.prompt_generator = TimestampColumnPromptGenerator(
             data_description=task.metadata["description"], column_names=column_names
         )
 
@@ -230,35 +333,42 @@ class TimestampColumnInference(TaskInference):
 class ForecastHorizonInference(TaskInference):
     def initialize_task(self, task):
         self.valid_values = None
-        self.prompt_genetator = ForecastLengthPromptGenerator(
-            data_description=task.metadata["description"]
-        )
-
-
-class ProblemTypeInference(TaskInference):
-    def initialize_task(self, task):
-        self.valid_values = PROBLEM_TYPES
-        self.prompt_genetator = ProblemTypePromptGenerator(
+        self.fallback_value = DEFAULT_FORECAST_HORIZON
+        self.prompt_generator = ForecastLengthPromptGenerator(
             data_description=task.metadata["description"]
         )
 
     def post_process(self, task, value):
-        # LLM may get confused between BINARY and MULTICLASS as it cannot see the whole label column
-        if value in CLASSIFICATION_PROBLEM_TYPES:
-            problem_type_infered_by_autogloun = infer_problem_type(
-                task.train_data[task.label_column], silent=True
+        """Validate and convert forecast horizon to a positive integer."""
+        horizon = None
+        if isinstance(value, int):
+            horizon = value
+        elif isinstance(value, str):
+            try:
+                horizon = int(value)
+            except ValueError:
+                logger.warning(
+                    f"Could not convert forecast_horizon '{value}' to integer"
+                )
+                return self.fallback_value
+
+        if horizon is None or horizon <= 0:
+            logger.warning(
+                f"Invalid forecast_horizon value: {value}. Using default: {self.fallback_value}"
             )
-            if problem_type_infered_by_autogloun in CLASSIFICATION_PROBLEM_TYPES:
-                value = problem_type_infered_by_autogloun
-        return value
+            return self.fallback_value
+
+        return horizon
 
 
 class BaseIDColumnInference(TaskInference):
+    data_key: Optional[str] = None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.valid_values = []
         self.fallback_value = NO_ID_COLUMN_IDENTIFIED
-        self.prompt_genetator = None
+        self.prompt_generator = None
 
     def get_data(self, task):
         raise NotImplementedError()
@@ -269,18 +379,22 @@ class BaseIDColumnInference(TaskInference):
     def process_id_column(self, task, id_column):
         raise NotImplementedError()
 
-    def initialize_task(self, task, description=None):
-        if self.get_data(task) is None:
-            return
+    def has_data_source(self, task: PredictionTask) -> bool:
+        return (
+            self.data_key is not None
+            and task.dataset_mapping[self.data_key] is not None
+        )
 
-        column_names = list(self.get_data(task).columns)
+    def initialize_task(self, task, description=None):
+        data = self.get_data(task)
+        column_names = list(data.columns)
         # Assume ID column can only appear in first 3 columns
         if len(column_names) >= 3:
             column_names = column_names[:3]
         self.valid_values = column_names + [NO_ID_COLUMN_IDENTIFIED]
         if not description:
             description = task.metadata["description"]
-        self.prompt_genetator = self.get_prompt_generator()(
+        self.prompt_generator = self.get_prompt_generator()(
             data_description=description,
             column_names=column_names,
             label_column=task.metadata["label_column"],
@@ -288,7 +402,7 @@ class BaseIDColumnInference(TaskInference):
 
     def transform(self, task: PredictionTask) -> PredictionTask:
         id_column_name = self.get_prompt_generator().fields[0]
-        if self.get_data(task) is None:
+        if not self.has_data_source(task):
             setattr(task, id_column_name, None)
             return task
 
@@ -297,7 +411,7 @@ class BaseIDColumnInference(TaskInference):
 
         if parser_output[id_column_name] == NO_ID_COLUMN_IDENTIFIED:
             logger.warning(
-                "Failed to infer ID column with data descriptions"
+                "Failed to infer ID column with data descriptions. "
                 "Retry the inference without data descriptions."
             )
             self.initialize_task(
@@ -314,6 +428,8 @@ class BaseIDColumnInference(TaskInference):
 
 
 class TestIDColumnInference(BaseIDColumnInference):
+    data_key = TEST
+
     def get_data(self, task):
         return task.test_data
 
@@ -328,15 +444,18 @@ class TestIDColumnInference(BaseIDColumnInference):
                     id_column = task.output_id_column
                 else:
                     id_column = "id_column"
-                new_test_data = task.test_data.copy()
-                new_test_data[id_column] = task.sample_submission_data[
-                    task.output_id_column
-                ]
-                task.test_data = new_test_data
+                if task.sample_submission_data is not None:
+                    new_test_data = task.test_data.copy()
+                    new_test_data[id_column] = task.sample_submission_data[
+                        task.output_id_column
+                    ]
+                    task.test_data = new_test_data
         return id_column
 
 
 class TrainIDColumnInference(BaseIDColumnInference):
+    data_key = TRAIN
+
     def get_data(self, task):
         return task.train_data
 
@@ -344,17 +463,12 @@ class TrainIDColumnInference(BaseIDColumnInference):
         return TrainIDColumnPromptGenerator
 
     def process_id_column(self, task, id_column):
-        if id_column != NO_ID_COLUMN_IDENTIFIED:
-            new_train_data = task.train_data.copy()
-            new_train_data = new_train_data.drop(columns=[id_column])
-            task.train_data = new_train_data
-            logger.info(f"Dropping ID column {id_column} from training data.")
-            task.metadata["dropped_train_id_column"] = True
-
         return id_column
 
 
 class OutputIDColumnInference(BaseIDColumnInference):
+    data_key = OUTPUT
+
     def get_data(self, task):
         return task.sample_submission_data
 
@@ -363,6 +477,22 @@ class OutputIDColumnInference(BaseIDColumnInference):
 
     def process_id_column(self, task, id_column):
         return id_column
+
+
+class DropIDColumnInference(TaskInference):
+    def transform(self, task: PredictionTask) -> PredictionTask:
+        id_column = task.train_id_column
+        if (
+            id_column in (None, NO_ID_COLUMN_IDENTIFIED)
+            or task.dataset_mapping[TRAIN] is None
+            or id_column not in task.train_data.columns
+        ):
+            return task
+
+        task.train_data = task.train_data.drop(columns=[id_column])
+        logger.info(f"Dropping ID column {id_column} from training data.")
+        task.metadata["dropped_train_id_column"] = True
+        return task
 
 
 class EvalMetricInference(TaskInference):
@@ -376,6 +506,6 @@ class EvalMetricInference(TaskInference):
         self.valid_values = self.metrics
         if problem_type:
             self.fallback_value = METRICS_BY_PROBLEM_TYPE[problem_type][0]
-        self.prompt_genetator = EvalMetricPromptGenerator(
+        self.prompt_generator = EvalMetricPromptGenerator(
             data_description=task.metadata["description"], metrics=self.metrics
         )
