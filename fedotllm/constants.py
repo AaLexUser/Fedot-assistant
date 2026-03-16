@@ -164,7 +164,15 @@ LLM_MAPPING = {
     "Kimi K2.5": "moonshotai/kimi-k2.5",
 }
 
-LLM_OPTIONS = ["Qwen3.5-27B", "Qwen3.5-35B-A3B", "GPT 5 Nano", "GPT 5 Mini", "GLM 4.7 Flash", "GLM 5", "Kimi K2.5"]
+LLM_OPTIONS = [
+    "GLM 4.7 Flash",
+    "GPT 5 Nano",
+    "GPT 5 Mini",
+    "Qwen3.5-27B",
+    "Qwen3.5-35B-A3B",
+    "GLM 5",
+    "Kimi K2.5",
+]
 
 # Provider configuration
 BASE_URL_MAPPING = {
@@ -277,7 +285,9 @@ LOGO_PATH = str(get_ui_sample_dataset_dir().parent / "static" / "page_icon.png")
 SUCCESS_MESSAGE = """
         🎉 Готово! Если инструмент оказался полезен, будем рады звезде на [GitHub](https://github.com/AaLexUser/Fedot-assistant) ⭐
         """
-S3_URL = "https://drive.google.com/uc?export=download&id=1N4GNZ69yTEIUT-XDmXrx35CTVfwecMwh"
+S3_URL = (
+    "https://drive.google.com/uc?export=download&id=1N4GNZ69yTEIUT-XDmXrx35CTVfwecMwh"
+)
 LOCAL_ZIP_PATH = str(get_ui_sample_dataset_archive_path())
 EXTRACT_DIR = str(get_ui_sample_dataset_dir())
 IGNORED_MESSAGES = [

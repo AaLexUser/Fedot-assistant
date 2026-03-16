@@ -2,7 +2,6 @@ FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/usr/local
 
 WORKDIR /app
@@ -25,7 +24,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
 COPY fedotllm ./fedotllm
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev && uv cache clean
 
 EXPOSE 8501
 

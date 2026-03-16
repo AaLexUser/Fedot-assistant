@@ -53,7 +53,7 @@ quality: format lint-fix ## Run all quality checks
 .PHONY: docker-up
 docker-up: ## Start Docker containers with docker-compose
 	@echo "$(BLUE)Starting Docker containers...$(NC)"
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up -d --build
 	@echo "$(GREEN)Containers started!$(NC)"
 
 .PHONY: docker-down

@@ -30,11 +30,11 @@ def parse_model_path(log):
     if match:
         return match.group(1)
 
-    # Try artifacts path pattern (unquoted, at end of line)
-    artifacts_pattern = r"(?:saved at|Artifacts.*saved at)\s+([^\s]+)"
-    match = re.search(artifacts_pattern, log, re.IGNORECASE)
-    if match:
-        return match.group(1)
+    # # Try artifacts path pattern (unquoted, at end of line)
+    # artifacts_pattern = r"(?:saved at|Artifacts.*saved at)\s+([^\s]+)"
+    # match = re.search(artifacts_pattern, log, re.IGNORECASE)
+    # if match:
+    #     return match.group(1)
 
     return None
 
@@ -211,3 +211,5 @@ def messages():
                 st.session_state.stage_status[st.session_state.current_stage].update(
                     state="running",
                 )
+        process.stdout.close()
+        st.session_state.process = None

@@ -459,19 +459,24 @@ def _extract_zip_strip_toplevel(zip_path: str, extract_dir: str):
             first_parts = members[0].split("/")
             toplevel = first_parts[0] if first_parts else ""
 
-            has_toplevel = all(m.startswith(toplevel + "/") for m in members if m.strip())
+            has_toplevel = all(
+                m.startswith(toplevel + "/") for m in members if m.strip()
+            )
 
             if has_toplevel and toplevel:
                 for member in members:
                     if member.strip():
-                        relative_path = member[len(toplevel) + 1:]
+                        relative_path = member[len(toplevel) + 1 :]
                         if relative_path:
                             target_path = os.path.join(extract_dir, relative_path)
                             parent = os.path.dirname(target_path)
                             if parent:
                                 os.makedirs(parent, exist_ok=True)
                             if not member.endswith("/"):
-                                with zip_ref.open(member) as src, open(target_path, "wb") as dst:
+                                with (
+                                    zip_ref.open(member) as src,
+                                    open(target_path, "wb") as dst,
+                                ):
                                     dst.write(src.read())
                 return
 

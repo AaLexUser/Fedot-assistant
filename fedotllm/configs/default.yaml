@@ -17,7 +17,9 @@ feature_transformers:
 automl:
   enabled: "fedot"
   autogluon:
-    predictor_init_kwargs: {}
+    predictor_init_kwargs: {
+      safe_mode: True
+    }
     predictor_fit_kwargs:
       presets: best_quality
       with_tuning: False

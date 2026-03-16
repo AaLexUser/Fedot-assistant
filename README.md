@@ -131,7 +131,7 @@ cp .env.production.example .env.production
 docker compose up -d --build
 ```
 
-The compose setup exposes port `8501` by default and persists uploaded datasets and
+The compose setup exposes port `8000` by default and persists uploaded datasets and
 trained artifacts in named Docker volumes.
 
 ## 🙌 Acknowledgement

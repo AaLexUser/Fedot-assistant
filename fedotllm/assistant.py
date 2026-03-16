@@ -247,6 +247,15 @@ class PredictionAssistant:
                 raise ValueError(
                     "Unknown automl framework: {self.config.automl.enabled}"
                 )
+        # Check if we have sufficient time remaining for training
+        if time_limit <= 0:
+            raise Exception(
+                f"Insufficient time remaining ({time_limit:.2f}s) for model training. "
+                f"Preprocessing phase exhausted the available time limit. "
+                f"Consider increasing the time_limit or disabling time-intensive features.",
+                "Predictor Fit",
+            )
+
         try:
             if self.config.automl.enabled in ["fedot", "fedot_ind"]:
                 time_limit = time_limit / 60

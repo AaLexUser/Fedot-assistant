@@ -41,10 +41,12 @@ def make_prediction_outputs(
         and task.test_id_column != NO_ID_COLUMN_IDENTIFIED
     ):
         test_ids = task.test_data[task.test_id_column]
-        output_ids = task.sample_submission_data[task.output_id_column]
 
-        if not test_ids.equals(output_ids):
-            print("WARNING: Test IDs and output IDs do not match!")
+        # Check if sample submission data is available for ID comparison
+        if task.sample_submission_data is not None:
+            output_ids = task.sample_submission_data[task.output_id_column]
+            if not test_ids.equals(output_ids):
+                print("WARNING: Test IDs and output IDs do not match!")
 
         # Ensure test ID column is included
         if task.test_id_column not in outputs.columns:
@@ -276,7 +278,7 @@ def run_assistant(
         assistant.predictor.save_artifacts(str(full_save_path), task)
 
         rprint(
-            f"[green]Artifacts including transformed datasets and trained model saved at {full_save_path}[/green]"
+            f"Artifacts including transformed datasets and trained model saved at {full_save_path}"
         )
 
     return task, assistant
