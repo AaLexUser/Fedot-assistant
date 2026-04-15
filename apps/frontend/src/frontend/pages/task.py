@@ -527,12 +527,22 @@ def get_sample_dataset_files(dataset_dir):
 
 def get_available_datasets(sample_dataset_dir):
     """Get all subdirectories in the sample_dataset directory."""
-    return [d.name for d in Path(sample_dataset_dir).iterdir() if d.is_dir()]
+    path = Path(sample_dataset_dir)
+    if not path.is_dir():
+        return []
+    return [d.name for d in path.iterdir() if d.is_dir()]
 
 
 def sample_dataset_selector():
     sample_dataset_dir = EXTRACT_DIR
     sample_datasets = get_available_datasets(sample_dataset_dir)
+    if not sample_datasets:
+        st.session_state.sample_dataset_dir = None
+        st.warning(
+            "Примеры недоступены: каталог не найден или загрузка не завершилась. "
+            "Попробуйте обновить страницу или выберите «Загрузить свой»."
+        )
+        return
     load_value("sample_dataset_selector")
     selected_dataset = st.selectbox(
         "Выберите датасет:",

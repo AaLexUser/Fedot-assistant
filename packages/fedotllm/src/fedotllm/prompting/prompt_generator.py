@@ -162,9 +162,8 @@ class ProblemTypePromptGenerator(PromptGenerator):
 
     @property
     def label_train_sample(self) -> str:
-        label_sample = (
-            self.train_data[self.label_column].sample(n=10).to_markdown(index=False)
-        )
+        col = self.train_data[self.label_column]
+        label_sample = col.sample(n=min(10, len(col))).to_markdown(index=False)
         return f"Label column sample:\n\n{label_sample}"
 
     def generate_prompt(self) -> str:

@@ -26,6 +26,7 @@ COPY pyproject.toml uv.lock README.md ./
 
 # Copy packages and apps
 COPY packages/fedotllm ./packages/fedotllm
+COPY packages/shared ./packages/shared
 COPY apps/frontend ./apps/frontend
 COPY apps/server ./apps/server
 
