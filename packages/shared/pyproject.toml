@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shared"
+version = "0.1.0"
+description = "Shared UI/API option metadata for FedotLLM apps (Streamlit + REST)"
+authors = [{ name = "Alexey Lapin", email = "a.lapin@itmo.ru" }]
+readme = "../../README.md"
+requires-python = ">=3.10,<3.11"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shared"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11.13",
+]

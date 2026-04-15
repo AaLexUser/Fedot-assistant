@@ -14,6 +14,7 @@ __pycache__
 docs
 tests
 
-fedotllm/ui/artifacts
-fedotllm/ui/user_data
-
+apps/frontend/artifacts
+apps/frontend/user_data
+packages/fedotllm/src/fedotllm/ui/artifacts
+packages/fedotllm/src/fedotllm/ui/user_data

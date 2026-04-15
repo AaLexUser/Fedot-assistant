@@ -77,3 +77,4 @@ artifacts/
 .env.production
 sample_dataset/
 user_data/
+data/

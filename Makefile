@@ -51,7 +51,7 @@ quality: format lint-fix ## Run all quality checks
 # =============================================================================
 
 .PHONY: docker-up
-docker-up: ## Start Docker containers with docker-compose
+docker-up: ## Start Docker containers with docker-compose (frontend + server)
 	@echo "$(BLUE)Starting Docker containers...$(NC)"
 	$(DOCKER_COMPOSE) up -d --build
 	@echo "$(GREEN)Containers started!$(NC)"
@@ -63,16 +63,25 @@ docker-down: ## Stop and remove Docker containers
 	@echo "$(GREEN)Containers stopped!$(NC)"
 
 .PHONY: docker-logs
-docker-logs: ## View Docker container logs
-	@echo "$(BLUE)Showing Docker logs...$(NC)"
+docker-logs: ## View Docker container logs (use SERVICE=frontend|server)
+	@echo "$(BLUE)Showing Docker logs for $(SERVICE)...$(NC)"
+ifeq ($(SERVICE),)
 	$(DOCKER_COMPOSE) logs -f
+else
+	$(DOCKER_COMPOSE) logs -f $(SERVICE)
+endif
 
-.PHONY: docker-shell
-docker-shell: ## Open a shell inside the container
-	@echo "$(BLUE)Connecting to container shell...$(NC)"
-	$(DOCKER_COMPOSE) exec fedotllm bash
+.PHONY: docker-shell-frontend
+docker-shell-frontend: ## Open a shell inside the frontend container
+	@echo "$(BLUE)Connecting to frontend container shell...$(NC)"
+	$(DOCKER_COMPOSE) exec fedot-assistant-frontend bash
+
+.PHONY: docker-shell-server
+docker-shell-server: ## Open a shell inside the server container
+	@echo "$(BLUE)Connecting to server container shell...$(NC)"
+	$(DOCKER_COMPOSE) exec fedot-assistant-server bash
 
 .PHONY: docker-exec
-docker-exec: ## Execute a command in the container (use with CMD="<command>")
+docker-exec: ## Execute a command in container (use with SERVICE=frontend|server CMD="<command>")
 	@echo "$(BLUE)Executing command in container...$(NC)"
-	$(DOCKER_COMPOSE) exec fedotllm $(CMD)
+	$(DOCKER_COMPOSE) exec $(SERVICE) $(CMD)

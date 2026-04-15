@@ -1,0 +1,39 @@
+infer_eval_metric: True
+detect_and_drop_id_column: False
+task_preprocessors_timeout: 3600
+time_limit: 14400
+save_artifacts:
+  enabled: True
+  append_timestamp: True
+  path: ${oc.env:FEDOTLLM_ARTIFACTS_DIR,./artifacts}
+feature_transformers:
+  enabled_models: [CAAFE]
+  models:
+    CAAFE:
+      _target_: fedotllm.transformer.feature_transformers.caafe.CAAFETransformer
+      eval_model: lightgdm
+      num_iterations: 5
+      optimization_metric: roc
+automl:
+  enabled: "fedot"
+  autogluon:
+    predictor_init_kwargs: {}
+    predictor_fit_kwargs:
+      presets: best_quality
+  fedot:
+    predictor_init_kwargs:
+      preset: best_quality
+      with_tuning: True
+    predictor_fit_kwargs: {}
+  fedot_ind:
+    predictor_init_kwargs:
+      preset: best_quality
+      with_tuning: True
+    predictor_fit_kwargs: { }
+llm:
+  model: ${oc.env:FEDOTLLM_LLM_MODEL,gemini-2.0-flash}
+  base_url: ${oc.env:FEDOTLLM_LLM_BASE_URL,https://generativelanguage.googleapis.com/v1beta/openai/}
+  api_key: ${oc.env:FEDOTLLM_LLM_API_KEY}
+  max_tokens: 512
+  temperature: 0
+  verbose: True

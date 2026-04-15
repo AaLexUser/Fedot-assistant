@@ -21,11 +21,17 @@ RUN apt-get update \
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /uvx /bin/
 
+# Copy monorepo root files
 COPY pyproject.toml uv.lock README.md ./
-COPY fedotllm ./fedotllm
+
+# Copy packages and apps
+COPY packages/fedotllm ./packages/fedotllm
+COPY apps/frontend ./apps/frontend
+COPY apps/server ./apps/server
 
 RUN uv sync --frozen --no-dev && uv cache clean
 
-EXPOSE 8501
+EXPOSE 8501 8000
 
-CMD ["streamlit", "run", "fedotllm/ui/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+# Default to frontend (Streamlit)
+CMD ["streamlit", "run", "apps/frontend/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
