@@ -1,6 +1,9 @@
+import hashlib
+import json
 import logging
 import os
 import pprint
+from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -20,6 +23,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from fedotllm.runtime_paths import get_llm_cache_dir
 from fedotllm.utils.configs import load_config
 
 load_dotenv()
@@ -37,6 +41,8 @@ class AssistantChatOpenAI:
         self.base_url = config.get("base_url", None)
         self.temperature = config.get("temperature", 0)
         self.max_tokens = config.get("max_tokens", 512)
+        self.cache_dir = get_llm_cache_dir()
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         if "FEDOTLLM_LLM_API_KEY" in os.environ:
             api_key = os.environ["FEDOTLLM_LLM_API_KEY"]
@@ -56,10 +62,42 @@ class AssistantChatOpenAI:
         return {
             "model": self.model,
             "base_url": self.base_url,
+            "cache_dir": str(self.cache_dir),
             "history": self.history_,
             "input": self.input_,
             "output": self.output_,
         }
+
+    def _cache_path(self, messages: List[Dict[str, str]]) -> Path:
+        cache_key = json.dumps(
+            {
+                "messages": messages,
+                "model": self.model,
+                "base_url": self.base_url,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        return self.cache_dir / f"{hashlib.sha256(cache_key.encode()).hexdigest()}.txt"
+
+    def _append_history(
+        self,
+        messages: List[Dict[str, str]],
+        output: Any,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        self.history_.append(
+            {
+                "input": messages,
+                "output": pprint.pformat(output),
+                "input_tokens": prompt_tokens,
+                "output_tokens": completion_tokens,
+            }
+        )
 
     @retry(
         stop=stop_after_attempt(5),
@@ -77,6 +115,24 @@ class AssistantChatOpenAI:
     )
     @observe()
     def invoke(self, messages: List[Dict[str, str]]):
+        cache_path = self._cache_path(messages)
+        try:
+            cached_content = cache_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            cached_content = None
+        except OSError as exc:
+            logger.warning("Failed to read LLM cache file %s: %s", cache_path, exc)
+            cached_content = None
+
+        if cached_content is not None:
+            self._append_history(
+                messages=messages,
+                output={"cached": True, "content": cached_content},
+                prompt_tokens=0,
+                completion_tokens=0,
+            )
+            return cached_content
+
         response = self.client.chat.completions.create(
             messages=messages,
             model=self.model,
@@ -106,14 +162,18 @@ class AssistantChatOpenAI:
         self.input_ += prompt_tokens
         self.output_ += completion_tokens
 
-        self.history_.append(
-            {
-                "input": messages,
-                "output": pprint.pformat(response),
-                "input_tokens": prompt_tokens,
-                "output_tokens": completion_tokens,
-            }
+        self._append_history(
+            messages=messages,
+            output=response,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
+        try:
+            tmp_cache_path = cache_path.with_suffix(".tmp")
+            tmp_cache_path.write_text(content, encoding="utf-8")
+            tmp_cache_path.replace(cache_path)
+        except OSError as exc:
+            logger.warning("Failed to write LLM cache file %s: %s", cache_path, exc)
         return content
 
 

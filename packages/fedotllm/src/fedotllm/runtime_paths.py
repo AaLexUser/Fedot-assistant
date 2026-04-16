@@ -45,3 +45,8 @@ def get_artifacts_dir() -> Path:
         "FEDOTLLM_ARTIFACTS_DIR",
         Path(tempfile.gettempdir()) / "fedotllm" / "artifacts",
     )
+
+
+def get_llm_cache_dir() -> Path:
+    """Persistent directory for cached LLM chat completions."""
+    return _resolve_path("FEDOTLLM_LLM_CACHE_DIR", get_data_dir() / "llm_cache")

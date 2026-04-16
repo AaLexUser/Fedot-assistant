@@ -1,6 +1,8 @@
 import logging
+import os
+import time
 import warnings
-from typing import Mapping, Tuple
+from typing import Any, Mapping, Tuple
 
 import pandas as pd
 from fedotllm.constants import BINARY, MULTICLASS
@@ -12,11 +14,95 @@ warnings.filterwarnings(action="ignore")
 
 try:
     from caafe import CAAFEClassifier
+    from caafe.llm_clients import litellm_client as _caafe_litellm_client
+    from caafe.prompting import prompt_generator as _caafe_prompt_generator
+    from caafe.prompting import utils as _caafe_prompt_utils
     from caafe.run_llm_code import run_llm_code
 except ImportError:
     raise ImportError(
-        "CAAFE required for feature generation but not installed. Please intall with `pip install caafe@git+https://github.com/AaLexUser/CAAFE.git@main`"
+        "CAAFE required for feature generation but not installed. Please install with `pip install caafe@git+https://github.com/AaLexUser/CAAFE.git@main`"
     )
+
+_CAAFE_INTEGRATION_PATCHED = False
+
+_CAAFE_EMPTY_RETRY_NUDGE_DEFAULT = (
+    "Your last reply had no visible assistant text. You must respond with a single "
+    "Python code block wrapped in markdown fences exactly as in the instructions "
+    "(```python ... ```). Do not return an empty message."
+)
+
+
+def _caafe_empty_content_retry_settings() -> tuple[int, float]:
+    retries = int(os.getenv("CAAFE_LLM_EMPTY_CONTENT_RETRIES", "5"))
+    backoff_s = float(os.getenv("CAAFE_LLM_EMPTY_CONTENT_BACKOFF_S", "0.5"))
+    return max(1, retries), max(0.0, backoff_s)
+
+
+def _apply_caafe_integration_patches() -> None:
+    """Retry empty LLM completions (common with some GLM APIs); harden extract_code."""
+    global _CAAFE_INTEGRATION_PATCHED
+    if _CAAFE_INTEGRATION_PATCHED:
+        return
+
+    _orig_extract = _caafe_prompt_utils.extract_code
+
+    def extract_code_safe(response: str) -> str:
+        if response is None:
+            max_r, _ = _caafe_empty_content_retry_settings()
+            raise ValueError(
+                f"CAAFE LLM returned empty message content after {max_r} attempts. "
+                "Increase CAAFE_LLM_EMPTY_CONTENT_RETRIES or check "
+                "CAAFE_LLM_API_KEY / CAAFE_LLM_MODEL / CAAFE_LLM_BASE_URL."
+            )
+        if isinstance(response, str) and response.strip() == "":
+            raise ValueError(
+                "CAAFE LLM returned only whitespace after retries. "
+                "Check CAAFE_LLM_MODEL and API credentials."
+            )
+        return _orig_extract(response)
+
+    def query_retry_empty(self, messages: str | list[dict[str, Any]], **kwargs):
+        import litellm
+
+        max_retries, backoff_s = _caafe_empty_content_retry_settings()
+        nudge = os.getenv(
+            "CAAFE_LLM_EMPTY_RETRY_NUDGE", _CAAFE_EMPTY_RETRY_NUDGE_DEFAULT
+        )
+        msg_list: list[dict[str, Any]] = (
+            [{"role": "user", "content": messages}]
+            if isinstance(messages, str)
+            else list(messages)
+        )
+        last: str | None = None
+        for attempt in range(1, max_retries + 1):
+            response = litellm.completion(
+                messages=msg_list,
+                **self.completion_params,
+                **kwargs,
+            )
+            last = response.choices[0].message.content
+            if last is not None and str(last).strip():
+                return last
+            if attempt < max_retries:
+                delay = backoff_s * attempt
+                logger.warning(
+                    "CAAFE LLM returned empty message content (attempt %s/%s); "
+                    "retrying in %.2fs with a follow-up user message (common with GLM).",
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                msg_list = msg_list + [{"role": "user", "content": nudge}]
+                time.sleep(delay)
+        return last
+
+    _caafe_litellm_client.LiteLLMClient.query = query_retry_empty
+    _caafe_prompt_utils.extract_code = extract_code_safe
+    _caafe_prompt_generator.extract_code = extract_code_safe
+    _CAAFE_INTEGRATION_PATCHED = True
+
+
+_apply_caafe_integration_patches()
 
 
 class CAAFETransformer(BaseFeatureTransformer):
