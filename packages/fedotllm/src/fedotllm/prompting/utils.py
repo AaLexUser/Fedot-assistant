@@ -1,7 +1,6 @@
 import difflib
 import json
 import logging
-import re
 from collections import defaultdict
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, Optional
@@ -93,6 +92,41 @@ def _resolve_valid_value(
     return None
 
 
+def _extract_json_object(text: str) -> str | None:
+    """Extract the first top-level brace-balanced JSON object from text."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    string_delim = None
+    i = start
+    while i < len(text):
+        c = text[i]
+        if string_delim:
+            if c == "\\":
+                i += 1  # skip escaped character
+            elif c == string_delim:
+                string_delim = None
+        elif c in ('"', "'"):
+            string_delim = c
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+        i += 1
+    return None
+
+
+def _extract_code_block(text: str) -> str | None:
+    """Extract content from a markdown ```json ... ``` code block."""
+    import re
+
+    match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    return match.group(1).strip() if match else None
+
+
 def parse_json(raw_reply: str) -> Optional[Dict[str, Any]]:
     """Parse JSON from an LLM response, handling various formats and repairing malformed JSON.
 
@@ -124,19 +158,22 @@ def parse_json(raw_reply: str) -> Optional[Dict[str, Any]]:
             return None
 
     raw_reply = raw_reply.strip()
-    # Case 1: Check if the JSON is enclosed in triple backticks
-    # Use non-greedy pattern \{.*?\} to match only the first complete JSON object
-    json_match = re.search(r"\{.*?\}|```(?:json)?\s*(.*?)```", raw_reply, re.DOTALL)
-    if json_match:
-        if json_match.group(1):
-            reply_str = json_match.group(1).strip()
-        else:
-            reply_str = json_match.group(0).strip()
-        reply = try_json_loads(reply_str)
+
+    # Case 1: JSON inside a markdown code block
+    code_block = _extract_code_block(raw_reply)
+    if code_block:
+        reply = try_json_loads(code_block)
         if reply is not None:
             return reply
 
-    # Case 2: Assume the entire string is a JSON object
+    # Case 2: Bare JSON object (brace-balanced extraction)
+    json_str = _extract_json_object(raw_reply)
+    if json_str:
+        reply = try_json_loads(json_str)
+        if reply is not None:
+            return reply
+
+    # Case 3: Assume the entire string is a JSON object
     return try_json_loads(raw_reply)
 
 

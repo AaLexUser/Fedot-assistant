@@ -6,7 +6,13 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from langfuse.decorators import observe
 from omegaconf import DictConfig
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -58,7 +64,15 @@ class AssistantChatOpenAI:
     @retry(
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type((RuntimeError,)),
+        retry=retry_if_exception_type(
+            (
+                RuntimeError,
+                APIConnectionError,
+                APITimeoutError,
+                RateLimitError,
+                InternalServerError,
+            )
+        ),
         reraise=True,
     )
     @observe()
