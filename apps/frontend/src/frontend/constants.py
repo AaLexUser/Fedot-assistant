@@ -17,7 +17,7 @@ BASE_DATA_DIR = str(get_ui_data_dir())
 PRESET_DEFAULT_CONFIG = {
     "Лучшее качество": {"time_limit": "4 ч", "feature_generation": False},
     "Высокое качество": {"time_limit": "10 мин", "feature_generation": False},
-    "Среднее качество": {"time_limit": "3 мин", "feature_generation": False},
+    "Среднее качество": {"time_limit": "5 мин", "feature_generation": False},
 }
 DEFAULT_PRESET = "Среднее качество"
 

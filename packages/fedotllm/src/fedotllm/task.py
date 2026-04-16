@@ -412,6 +412,8 @@ class PredictionTask:
             for column in self.train_data.columns:
                 if self.label_column and column == self.label_column:
                     continue
+                if self.train_data[column].dtype.kind in ("i", "u", "f"):
+                    continue
 
                 parsed = pd.to_datetime(self.train_data[column], errors="coerce")
                 if not parsed.empty and parsed.notna().all():
