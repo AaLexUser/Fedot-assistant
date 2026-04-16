@@ -7,13 +7,15 @@ import joblib
 import numpy as np
 import pandas as pd
 from fedot.api.main import Fedot
-from fedot.core.data.data import InputData
+from fedot.core.composer.metrics import QualityMetric
+from fedot.core.data.data import InputData, OutputData
 from fedot.core.data.multi_modal import MultiModalData
 from fedot.core.repository.dataset_types import DataTypesEnum
 from fedot.core.repository.tasks import Task, TaskTypesEnum, TsForecastingParams
 from fedotllm.tabular import TabularDataset
 from golem.core.dag.graph_utils import graph_structure
 from PIL import Image
+from sklearn.metrics import mean_squared_log_error
 from tqdm import tqdm
 
 from ..constants import (
@@ -29,6 +31,7 @@ from ..constants import (
     REGRESSION,
     ROC_AUC,
     ROOT_MEAN_SQUARED_ERROR,
+    ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR,
     TIME_SERIES,
 )
 from ..task import PredictionTask
@@ -37,12 +40,31 @@ from .base import Predictor
 
 logger = logging.getLogger(__name__)
 
+
+class FedotRMSLE(QualityMetric):
+    default_value = np.finfo(np.float64).max
+
+    @staticmethod
+    def metric(reference: InputData, predicted: OutputData) -> float:
+        return float(
+            np.sqrt(
+                mean_squared_log_error(
+                    y_true=reference.target,
+                    y_pred=predicted.predict,
+                )
+            )
+        )
+
+
+FEDOT_RMSLE_METRIC = FedotRMSLE.get_value
+
 METRICS_TO_FEDOT = {
     ROC_AUC: "roc_auc",
     LOG_LOSS: "neg_log_loss",
     ACCURACY: "accuracy",
     F1: "f1",
     ROOT_MEAN_SQUARED_ERROR: "rmse",
+    ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR: FEDOT_RMSLE_METRIC,
     MEAN_SQUARED_ERROR: "mse",
     MEAN_ABSOLUTE_ERROR: "mae",
     R2: "r2",
