@@ -20,6 +20,30 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 
 
+def _coerce_to_reference_dtype(series: pd.Series, reference: pd.Series) -> pd.Series:
+    try:
+        if pd.api.types.is_datetime64_any_dtype(reference.dtype):
+            coerced = pd.to_datetime(series, errors="raise")
+        elif pd.api.types.is_integer_dtype(reference.dtype):
+            coerced = pd.to_numeric(series, errors="raise")
+            non_null = coerced[coerced.notna()]
+            if not non_null.empty and not ((non_null % 1) == 0).all():
+                raise ValueError("non-integer values cannot be coerced to integer")
+            coerced = coerced.astype(reference.dtype)
+        elif pd.api.types.is_float_dtype(reference.dtype):
+            coerced = pd.to_numeric(series, errors="raise").astype(reference.dtype)
+        else:
+            coerced = series.astype(reference.dtype)
+    except (TypeError, ValueError) as exc:
+        print(
+            f"WARNING: Could not coerce output column '{series.name}' "
+            f"to expected dtype '{reference.dtype}': {exc}"
+        )
+        return series
+
+    return pd.Series(coerced.to_numpy(), index=series.index, name=series.name)
+
+
 def make_prediction_outputs(
     task: PredictionTask, predictions: Union[pd.DataFrame, pd.Series]
 ) -> pd.DataFrame:
@@ -27,6 +51,39 @@ def make_prediction_outputs(
         outputs = predictions.to_frame()
     else:
         outputs = predictions.copy()
+
+    if task.output_columns is None:
+        return outputs
+
+    sample_submission = task.sample_submission_data
+    sample_submission_matches = sample_submission is not None and len(
+        sample_submission
+    ) == len(outputs)
+
+    if sample_submission_matches:
+        test_columns = set()
+        if task.test_data is not None:
+            test_columns.update(task.test_data.columns)
+            test_columns.update(name for name in task.test_data.index.names if name)
+
+        prediction_columns = [
+            col
+            for col in task.output_columns
+            if col != task.output_id_column and col not in test_columns
+        ]
+        missing_prediction_columns = [
+            col for col in prediction_columns if col not in outputs.columns
+        ]
+        extra_prediction_columns = [
+            col for col in outputs.columns if col not in task.output_columns
+        ]
+
+        if missing_prediction_columns and len(missing_prediction_columns) == len(
+            extra_prediction_columns
+        ):
+            outputs = outputs.rename(
+                columns=dict(zip(extra_prediction_columns, missing_prediction_columns))
+            )
 
     # Ensure we only keep required output columns from predictions
     common_cols = [col for col in task.output_columns if col in outputs.columns]
@@ -46,10 +103,9 @@ def make_prediction_outputs(
                 print("WARNING: Test IDs and output IDs do not match!")
 
         # Ensure test ID column is included
-        if task.test_id_column not in outputs.columns:
-            outputs = pd.concat(
-                [task.test_data[task.test_id_column], outputs], axis="columns"
-            )
+        output_id_column = task.output_id_column or task.test_id_column
+        if output_id_column not in outputs.columns:
+            outputs[output_id_column] = test_ids.to_numpy()
 
     # Handle undetected ID columns
     missing_columns = [col for col in task.output_columns if col not in outputs.columns]
@@ -60,7 +116,10 @@ def make_prediction_outputs(
         )
 
         for col in missing_columns:
-            if task.test_data is not None:
+            if sample_submission_matches and col in sample_submission.columns:
+                outputs[col] = sample_submission[col].to_numpy()
+                print(f"WARNING: Copied from sample submission for column '{col}'")
+            elif task.test_data is not None:
                 if col in task.test_data.columns:
                     # Copy from test data if available as a column
                     outputs[col] = task.test_data[col]
@@ -89,6 +148,13 @@ def make_prediction_outputs(
 
     # Ensure columns are in the correct order
     outputs = outputs[task.output_columns]
+
+    if sample_submission_matches:
+        for column in task.output_columns:
+            if column in sample_submission.columns:
+                outputs[column] = _coerce_to_reference_dtype(
+                    outputs[column], sample_submission[column]
+                )
 
     return outputs
 
