@@ -14,6 +14,7 @@ feature_transformers:
       eval_model: lightgdm
       num_iterations: 5
       optimization_metric: roc
+      extra_body: ${llm.extra_body}
 automl:
   enabled: "fedot"
   autogluon:
@@ -36,4 +37,9 @@ llm:
   api_key: ${oc.env:FEDOTLLM_LLM_API_KEY}
   max_tokens: 512
   temperature: 0
+  extra_body: {
+    provider: {
+      quantizations: [fp8, fp16, bf16, fp32]
+    }
+  }
   verbose: True

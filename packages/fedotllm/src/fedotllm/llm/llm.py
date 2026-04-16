@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from langfuse.decorators import observe
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from openai import (
     APIConnectionError,
     APITimeoutError,
@@ -41,6 +41,10 @@ class AssistantChatOpenAI:
         self.base_url = config.get("base_url", None)
         self.temperature = config.get("temperature", 0)
         self.max_tokens = config.get("max_tokens", 512)
+        raw_extra_body = config.get("extra_body", None)
+        if raw_extra_body is not None and OmegaConf.is_config(raw_extra_body):
+            raw_extra_body = OmegaConf.to_container(raw_extra_body, resolve=True)
+        self.extra_body = raw_extra_body or None
         self.cache_dir = get_llm_cache_dir()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +66,7 @@ class AssistantChatOpenAI:
         return {
             "model": self.model,
             "base_url": self.base_url,
+            "extra_body": self.extra_body,
             "cache_dir": str(self.cache_dir),
             "history": self.history_,
             "input": self.input_,
@@ -76,6 +81,7 @@ class AssistantChatOpenAI:
                 "base_url": self.base_url,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
+                "extra_body": self.extra_body,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -133,12 +139,16 @@ class AssistantChatOpenAI:
             )
             return cached_content
 
-        response = self.client.chat.completions.create(
-            messages=messages,
-            model=self.model,
-            temperature=self.temperature,
-            # max_completion_tokens=self.max_tokens,
-        )
+        request_kwargs = {
+            "messages": messages,
+            "model": self.model,
+            "temperature": self.temperature,
+            # "max_completion_tokens": self.max_tokens,
+        }
+        if self.extra_body is not None:
+            request_kwargs["extra_body"] = self.extra_body
+
+        response = self.client.chat.completions.create(**request_kwargs)
 
         if getattr(response, "error", None):
             raise RuntimeError(f"LLM request failed: {response.error}")

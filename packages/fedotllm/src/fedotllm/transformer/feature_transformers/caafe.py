@@ -6,6 +6,7 @@ from typing import Any, Mapping, Tuple
 
 import pandas as pd
 from fedotllm.constants import BINARY, MULTICLASS
+from omegaconf import OmegaConf
 
 from .base import BaseFeatureTransformer
 
@@ -36,6 +37,23 @@ def _caafe_empty_content_retry_settings() -> tuple[int, float]:
     retries = int(os.getenv("CAAFE_LLM_EMPTY_CONTENT_RETRIES", "5"))
     backoff_s = float(os.getenv("CAAFE_LLM_EMPTY_CONTENT_BACKOFF_S", "0.5"))
     return max(1, retries), max(0.0, backoff_s)
+
+
+def _build_caafe_completion_kwargs(
+    completion_params: Mapping[str, Any], request_kwargs: Mapping[str, Any]
+) -> dict[str, Any]:
+    completion_kwargs = {
+        key: (
+            OmegaConf.to_container(value, resolve=True)
+            if OmegaConf.is_config(value)
+            else value
+        )
+        for key, value in {**completion_params, **request_kwargs}.items()
+    }
+    completion_kwargs.pop("max_completion_tokens", None)
+    if not completion_kwargs.get("extra_body"):
+        completion_kwargs.pop("extra_body", None)
+    return completion_kwargs
 
 
 def _apply_caafe_integration_patches() -> None:
@@ -77,8 +95,7 @@ def _apply_caafe_integration_patches() -> None:
         for attempt in range(1, max_retries + 1):
             response = litellm.completion(
                 messages=msg_list,
-                **self.completion_params,
-                **kwargs,
+                **_build_caafe_completion_kwargs(self.completion_params, kwargs),
             )
             last = response.choices[0].message.content
             if last is not None and str(last).strip():

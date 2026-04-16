@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-from copy import deepcopy
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -186,7 +185,7 @@ def get_feature_transformers_config(
 
     # Create list of configurations for enabled models
     transformers_config = [
-        OmegaConf.to_container(all_models_config[model_name], resolve=True)
+        unpack_omega_config(all_models_config[model_name])
         for model_name in enabled_models
         if model_name in all_models_config
     ]
@@ -196,6 +195,6 @@ def get_feature_transformers_config(
 
 
 def unpack_omega_config(config):
-    temp_config = deepcopy(config)
-    dict_config = OmegaConf.to_container(temp_config, resolve=True)
-    return dict_config
+    if OmegaConf.is_config(config):
+        return OmegaConf.to_container(config, resolve=True)
+    return config
