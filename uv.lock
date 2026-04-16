@@ -1646,6 +1646,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+caafe = [
+    { name = "caafe" },
+]
 dev = [
     { name = "ruff" },
 ]
@@ -1658,6 +1661,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+caafe = [{ name = "caafe", git = "https://github.com/AaLexUser/CAAFE.git" }]
 dev = [{ name = "ruff", specifier = ">=0.11.13" }]
 
 [[package]]
