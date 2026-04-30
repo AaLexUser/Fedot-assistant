@@ -1,14 +1,32 @@
-# FEDOT.ASSISTANT
+<div align="center">
 
-<p align="center">
-  <img src="./docs/FEDOT-ASSISTANT-logo.svg" width="600" alt="FEDOT.ASSISTANT logo">
-</p>
+<img src="./docs/FEDOT-ASSISTANT-logo.svg" width="600" alt="FEDOT.ASSISTANT logo">
+
 
 [![Acknowledgement ITMO](https://raw.githubusercontent.com/aimclub/open-source-ops/43bb283758b43d75ec1df0a6bb4ae3eb20066323/badges/ITMO_badge.svg)](https://itmo.ru/)
 ![Python](https://img.shields.io/badge/python-3.10-blue.svg)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/AaLexUser/Fedot-assistant)
 
+**LLM-based multi-AutoML Orchestrator.**
+</div>
+
+
 FEDOT.ASSISTANT is an LLM-based prototype for next-generation AutoML. It combines the power of Large Language Models with automated machine learning techniques to enhance data analysis and pipeline building processes.
+
+## 📁 Workspace Layout
+
+```
+fedot-assistant/
+├── packages/
+│   ├── fedotllm/           # Core package library
+│   └── shared/             # Shared
+│
+├── apps/
+│   ├── frontend/           # Streamlit UI application
+│   └── server/            # FastAPI backend server
+├── examples/              # Example tasks and datasets
+└── docs/                  # Documentation
+```
 
 ## 🆕 What's New
 
@@ -29,7 +47,7 @@ git clone https://github.com/AaLexUser/Fedot-assistant.git
 cd Fedot-assistant
 ```
 
-3. Create a new virtual environment and activate it:
+3. Create a virtual environment:
 
 ```bash
 uv venv --python 3.10
@@ -38,16 +56,11 @@ source .venv/bin/activate  # On Unix/macOS
 # .venv\Scripts\activate
 ```
 
-4. Install dependencies:
+4. Install all dependencies:
 
 ```bash
-uv sync
-```
-
-Optional (to use CAAFE feature generation):
-
-```bash
-uv sync --group caafe
+# Install all workspace packages
+uv sync --all-packages
 ```
 
 ## 🔧 Configuration
@@ -71,24 +84,38 @@ export CAAFE_LLM_BASE_URL="https://generativelanguage.googleapis.com/v1beta/open
 
 ### Configuration Options
 
-The system uses YAML configuration files you can customize. The default configuration is located at `fedotllm/configs/default.yaml`. You can create your own configuration file and specify it using the `--config-path` option.
+The system uses YAML configuration files you can customize. The default configuration is located at `packages/fedotllm/src/fedotllm/configs/default.yaml`. You can create your own configuration file and specify it using the `--config-path` option.
 
 ## 🚀 Quick Start
 
-### Basic Usage
+### Running the Applications
+
+#### Frontend (Streamlit UI)
 
 ```bash
-# Run with default settings
-fedotllm /path/to/your/task/directory
+fedotllm-ui
+```
+
+#### Backend (FastAPI Server)
+
+```bash
+fedotllm-server
+```
+
+
+#### CLI Usage
+
+```bash
+fedotllm run /path/to/your/task/directory
 
 # Use specific presets
-fedotllm /path/to/your/task/directory --presets best_quality
+fedotllm run /path/to/your/task/directory --presets best_quality
 
 # Custom configuration
-fedotllm /path/to/your/task/directory --config-path config.yaml
+fedotllm run /path/to/your/task/directory --config-path config.yaml
 
 # Override specific settings
-fedotllm /path/to/your/task/directory -o automl.enabled=fedot -o time_limit=7200
+fedotllm run /path/to/your/task/directory -o automl.enabled=fedot,time_limit=7200
 ```
 
 ### Enable or configure CAAFE (optional)
@@ -100,7 +127,7 @@ CAAFE performs LLM-driven feature engineering and currently supports classificat
 uv sync --group caafe
 
 # Run with CAAFE enabled (default), customizing parameters on the fly
-fedotllm /path/to/task \
+fedotllm run /path/to/task \
   -o "feature_transformers.enabled_models=[CAAFE]" \
   -o "feature_transformers.models.CAAFE.num_iterations=5" \
   -o "feature_transformers.models.CAAFE.optimization_metric=roc" \
@@ -121,5 +148,21 @@ Your task directory should contain:
 - `medium_quality`: Fast execution with good performance
 - `best_quality`: Maximum accuracy (default)
 
+## 📦 Package Usage
+
+You can also use the FedotLLM package directly in your Python code:
+
+```python
+from fedotllm import run_assistant
+
+# Run a task programmatically
+task, assistant = run_assistant(
+    task_path="/path/to/task",
+    config_overrides=["time_limit=600"],
+    presets="best_quality",
+)
+```
+
 ## 🙌 Acknowledgement
+
 Our implementation adapts code from [AutoGluon Assistant](https://github.com/autogluon/autogluon-assistant). We thank authors of this project for providing high quality open source code!

@@ -1,6 +1,6 @@
 ## Task Completion Requirements
 
-- `make quality` must pass before considering tasks completed.
+- `just quality` must pass before considering tasks completed.
 
 ## Project Snapshot
 
@@ -21,5 +21,4 @@ Long term maintainability is a core priority. If you add new functionality, firs
 # Agents
 
 - `.agents/plans` : manage plans
-- `.agents/references` : look for inspiration and examples
 

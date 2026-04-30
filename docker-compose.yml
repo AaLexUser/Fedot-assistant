@@ -1,0 +1,53 @@
+services:
+  # Frontend service (Streamlit UI)
+  frontend:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fedot-assistant:latest
+    container_name: fedot-assistant-frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      FEDOTLLM_UI_DATA_DIR: /app/data/user_data
+      FEDOTLLM_ARTIFACTS_DIR: /app/data/artifacts
+      FEDOTLLM_UI_SAMPLE_DATASET_DIR: /app/apps/frontend/sample_dataset
+    ports:
+      - "${FEDOTLLM_PORT:-8501}:8501"
+    volumes:
+      - /var/essdata/fedotllm/user-data:/app/data/user_data
+      - /var/essdata/fedotllm/artifacts:/app/data/artifacts
+    command: ["streamlit", "run", "apps/frontend/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Backend service (FastAPI Server)
+  server:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fedot-assistant:latest
+    container_name: fedot-assistant-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      FEDOTLLM_ARTIFACTS_DIR: /app/data/artifacts
+    ports:
+      - "${FEDOTLLM_SERVER_PORT:-8000}:8000"
+    volumes:
+      - /var/essdata/fedotllm/artifacts:/app/data/artifacts
+    command: ["uv", "run", "fedotllm-server"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

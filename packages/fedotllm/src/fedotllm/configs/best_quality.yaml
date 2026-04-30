@@ -1,0 +1,13 @@
+infer_eval_metric: True
+detect_and_drop_id_column: False
+task_preprocessors_timeout: 1800
+time_limit: 3600
+
+feature_transformers:
+  enabled_models: [CAAFE]
+  models:
+    CAAFE:
+      _target_: fedotllm.transformer.feature_transformers.caafe.CAAFETransformer
+      eval_model: lightgdm
+      num_iterations: 10
+      optimization_metric: roc
