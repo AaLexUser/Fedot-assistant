@@ -25,7 +25,7 @@ DEFAULT_AUTOML_ENGINE = "fedot"
 
 PRESET_MAPPING = {
     "Лучшее качество": "best_quality",
-    "Высокое качество": "high_quality",
+    "Высокое качество": "best_quality",
     "Среднее качество": "medium_quality",
 }
 PRESET_OPTIONS = ["Лучшее качество", "Высокое качество", "Среднее качество"]

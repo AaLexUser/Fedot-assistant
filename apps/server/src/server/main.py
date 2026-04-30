@@ -1,16 +1,11 @@
-"""
-FedotLLM Server Application
+"""FastAPI server that exposes FedotLLM task execution APIs."""
 
-FastAPI server that provides REST API endpoints for the FedotLLM package.
-This serves as the backend for the frontend application and provides
-programmatic access to FedotLLM functionality.
-"""
-
+from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fedotllm import run_assistant
 from fedotllm.constants import PRESETS, PROBLEM_TYPES, TASK_TYPES
@@ -70,7 +65,7 @@ app.add_middleware(
 
 
 # In-memory task storage (use proper database in production)
-tasks: Dict[str, Dict] = {}
+tasks: Dict[str, Dict[str, Any]] = {}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -94,15 +89,12 @@ async def get_config_options():
 @app.post("/tasks", response_model=TaskResponse)
 async def create_task(
     request: TaskRequest,
-    background_tasks: BackgroundTasks,
 ):
     """
     Create and start a new AutoML task.
 
     Args:
         request: Task request containing task directory and configuration
-        background_tasks: FastAPI background tasks
-
     Returns:
         TaskResponse with task ID and initial status
     """
@@ -113,21 +105,27 @@ async def create_task(
     if not task_dir.exists():
         raise HTTPException(status_code=400, detail=f"Task directory not found: {request.task_dir}")
 
-    # Initialize task
+    output_filename = str(task_dir.resolve() / f"fedotllm_output_{task_id}.csv")
+    process = Process(
+        target=run_task_background,
+        args=(request, output_filename),
+    )
+    process.start()
+
     tasks[task_id] = {
-        "status": "pending",
-        "progress": 0,
-        "logs": "",
+        "status": "running",
+        "progress": 10,
+        "logs": "Task is running",
         "output_file": None,
+        "output_path": output_filename,
+        "pid": process.pid,
+        "process": process,
         "request": request,
     }
 
-    # Start task in background
-    background_tasks.add_task(run_task_background, task_id, request)
-
     return TaskResponse(
         task_id=task_id,
-        status="pending",
+        status="running",
         message="Task created successfully",
     )
 
@@ -146,6 +144,7 @@ async def get_task_status(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
+    _refresh_task_state(task_id)
     task = tasks[task_id]
     return TaskStatusResponse(
         task_id=task_id,
@@ -170,42 +169,76 @@ async def cancel_task(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
-    # Cancel task (implement proper cancellation logic)
-    tasks[task_id]["status"] = "cancelled"
+    _refresh_task_state(task_id)
+    task = tasks[task_id]
+    if task["status"] != "running":
+        return {"message": f"Task {task_id} is already {task['status']}"}
+
+    process = _get_task_process(task)
+    if process is None or not process.is_alive():
+        _refresh_task_state(task_id)
+        return {"message": f"Task {task_id} is already {tasks[task_id]['status']}"}
+
+    process.terminate()
+    process.join(timeout=5)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=5)
+
+    output_path = Path(cast(str, task["output_path"]))
+    if output_path.exists():
+        output_path.unlink()
+
+    task["status"] = "cancelled"
+    task["logs"] = "Task cancelled"
+    task["progress"] = 0
+    task["process"] = None
+    task["pid"] = None
+    task["output_file"] = None
 
     return {"message": f"Task {task_id} cancelled"}
 
 
-def run_task_background(task_id: str, request: TaskRequest) -> None:
-    """
-    Run task in the background.
+def _get_task_process(task: Dict[str, Any]) -> Optional[Process]:
+    process = task.get("process")
+    if isinstance(process, Process):
+        return process
+    return None
 
-    Args:
-        task_id: The task identifier
-        request: Task request with configuration
-    """
-    try:
-        tasks[task_id]["status"] = "running"
-        tasks[task_id]["progress"] = 10
 
-        task_path = Path(request.task_dir).resolve()
-        output_filename = str(task_path / f"fedotllm_output_{task_id}.csv")
+def _refresh_task_state(task_id: str) -> None:
+    task = tasks[task_id]
+    if task["status"] != "running":
+        return
 
-        run_assistant(
-            str(task_path),
-            presets=request.presets,
-            config_overrides=request.config_overrides,
-            output_filename=output_filename,
-        )
+    process = _get_task_process(task)
+    if process is None or process.is_alive():
+        return
 
-        tasks[task_id]["status"] = "completed"
-        tasks[task_id]["progress"] = 100
-        tasks[task_id]["output_file"] = output_filename
-        tasks[task_id]["logs"] = "Task completed successfully"
+    process.join(timeout=0)
+    task["process"] = None
+    task["pid"] = None
 
-    except Exception as e:
-        tasks[task_id]["status"] = "failed"
-        tasks[task_id]["logs"] = str(e)
+    if process.exitcode == 0:
+        task["status"] = "completed"
+        task["progress"] = 100
+        task["output_file"] = cast(str, task["output_path"])
+        task["logs"] = "Task completed successfully"
+        return
+
+    task["status"] = "failed"
+    task["logs"] = f"Task failed with exit code {process.exitcode}"
+
+
+def run_task_background(request: TaskRequest, output_filename: str) -> None:
+    """Run the requested task in a dedicated worker process."""
+    task_path = Path(request.task_dir).resolve()
+    run_assistant(
+        str(task_path),
+        presets=request.presets,
+        config_overrides=request.config_overrides,
+        output_filename=output_filename,
+    )
 
 
 def start_server(host: str = "0.0.0.0", port: int = 8000):
