@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from collections import defaultdict
-from typing import Any, Dict
+from typing import Any, Dict, Optional, cast
 
 import joblib
 import numpy as np
@@ -29,6 +29,15 @@ from ..constants import (
 from ..task import PredictionTask
 from ..utils import unpack_omega_config
 from .base import Predictor
+from .targets import (
+    per_label_problem_type,
+    series_from_binary_proba,
+    split_tabular_task,
+    task_is_multilabel,
+    task_label_columns,
+    time_limit_per_label,
+    validate_binary_multilabel_targets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +56,13 @@ class AutogluonTabularPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
-        self.predictor: TabularPredictor = None
+        self.predictors: Dict[str, TabularPredictor] = {}
 
     def save_dataset_details(self, task: PredictionTask) -> None:
         for key, data in (("train", task.train_data), ("test", task.test_data)):
             self.metadata["dataset_summery"][key] = data.describe().to_dict()
-            self.metadata["feature_metadata_raw"][key] = FeatureMetadata.from_df(
-                data
-            ).to_dict()
-            self.metadata["feature_missing_values"] = (
-                data.isna().sum() / len(data)
-            ).to_dict()
+            self.metadata["feature_metadata_raw"][key] = FeatureMetadata.from_df(data).to_dict()
+            self.metadata["feature_missing_values"] = (data.isna().sum() / len(data)).to_dict()
 
     def fit(self, task, time_limit=None):
         """Trains an AutoGluon TabularPredictor with parsed arguments. Saves trained predictor
@@ -72,47 +77,67 @@ class AutogluonTabularPredictor(Predictor):
         if eval_metric == ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR:
             eval_metric = root_mean_square_logarithmic_error
 
-        predictor_init_kwargs = {
-            "learner_kwargs": {"ignored_columns": task.columns_in_train_but_not_test},
-            "label": task.label_column,
-            "problem_type": task.problem_type,
-            "eval_metric": eval_metric,
-            **unpack_omega_config(self.config.predictor_init_kwargs),
-        }
-
+        train_x, train_y, test_x = split_tabular_task(task)
+        label_columns = task_label_columns(task)
+        if task_is_multilabel(task):
+            validate_binary_multilabel_targets(train_y)
         predictor_fit_kwargs = self.config.predictor_fit_kwargs.copy()
         predictor_fit_kwargs.pop("time_limit", None)
 
         logger.info("Fitting AutoGluon TabularPredictor")
-        logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
         logger.info(f"predictor_fit_kwargs: {predictor_fit_kwargs}")
 
         self.metadata |= {
-            "predictor_init_kwargs": predictor_init_kwargs,
             "predictor_fit_kwargs": predictor_fit_kwargs,
         }
 
         self.save_dataset_details(task)
-        self.predictor = TabularPredictor(**predictor_init_kwargs).fit(
-            task.train_data,
-            **unpack_omega_config(predictor_fit_kwargs),
-            time_limit=time_limit,
-        )
-
-        self.metadata["leaderboard"] = self.predictor.leaderboard().to_dict()
+        for label in label_columns:
+            predictor_init_kwargs = {
+                "learner_kwargs": {"ignored_columns": task.columns_in_train_but_not_test},
+                "label": label,
+                "problem_type": per_label_problem_type(task),
+                "eval_metric": eval_metric,
+                **unpack_omega_config(self.config.predictor_init_kwargs),
+            }
+            logger.info(f"predictor_init_kwargs[{label}]: {predictor_init_kwargs}")
+            label_train = pd.concat([train_x, train_y[[label]]], axis=1)
+            predictor = TabularPredictor(**cast(Any, predictor_init_kwargs)).fit(
+                label_train,
+                **cast(Any, unpack_omega_config(predictor_fit_kwargs)),
+                time_limit=time_limit_per_label(time_limit, len(label_columns)),
+            )
+            self.predictors[label] = predictor
+            self.metadata["predictor_init_kwargs"][label] = predictor_init_kwargs
+            self.metadata["leaderboard"][label] = predictor.leaderboard().to_dict()
+        self.metadata["test_columns"] = test_x.columns.to_list()
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
-        if (
-            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
-            and self.predictor.problem_type in [BINARY, MULTICLASS]
-        ):
-            return self.predictor.predict_proba(
-                task.test_data,
-                as_multiclass=(self.predictor.problem_type == MULTICLASS),
-            )
-        else:
-            return self.predictor.predict(task.test_data)
+        _, _, test_x = split_tabular_task(task)
+        predictions = []
+        for label in task_label_columns(task):
+            predictor = self.predictors[label]
+            if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and predictor.problem_type in [BINARY, MULTICLASS]:
+                label_predictions = predictor.predict_proba(
+                    test_x,
+                    as_multiclass=(predictor.problem_type == MULTICLASS),
+                )
+                if predictor.problem_type == BINARY:
+                    predictions.append(
+                        series_from_binary_proba(label_predictions, label=label, index=task.test_data.index)
+                    )
+                else:
+                    predictions.append(label_predictions)
+            else:
+                predictions.append(
+                    pd.Series(
+                        np.asarray(predictor.predict(test_x)),
+                        name=label,
+                        index=task.test_data.index,
+                    )
+                )
+        return pd.concat(predictions, axis=1)
 
     def save_artifacts(self, path: str, task: PredictionTask):
         artifacts = {
@@ -122,24 +147,21 @@ class AutogluonTabularPredictor(Predictor):
             "out_data": task.sample_submission_data,
         }
 
-        ag_model_dir = self.predictor.path
         full_save_path_pkl_file = f"{path}/artifacts.pkl"
         os.makedirs(path, exist_ok=True)
 
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
-        src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(
-            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
-        )
-
-        if src_dir == dst_dir:
-            logger.warning(
-                "Skipping model directory copy because source and destination are the same: %s",
-                src_dir,
-            )
-        else:
+        for label, predictor in self.predictors.items():
+            src_dir = os.path.abspath(predictor.path)
+            dst_dir = os.path.join(os.path.abspath(path), f"autogluon_{label}")
+            if src_dir == dst_dir:
+                logger.warning(
+                    "Skipping model directory copy because source and destination are the same: %s",
+                    src_dir,
+                )
+                continue
             if os.path.exists(dst_dir):
                 shutil.rmtree(dst_dir)
             shutil.copytree(src_dir, dst_dir)
@@ -149,17 +171,13 @@ class AutogluonMultimodalPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
-        self.predictor: MultiModalPredictor = None
+        self.predictor: Optional[MultiModalPredictor] = None
 
     def save_dataset_details(self, task: PredictionTask) -> None:
         for key, data in (("train", task.train_data), ("test", task.test_data)):
             self.metadata["dataset_summery"][key] = data.describe().to_dict()
-            self.metadata["feature_metadata_raw"][key] = FeatureMetadata.from_df(
-                data
-            ).to_dict()
-            self.metadata["feature_missing_values"] = (
-                data.isna().sum() / len(data)
-            ).to_dict()
+            self.metadata["feature_metadata_raw"][key] = FeatureMetadata.from_df(data).to_dict()
+            self.metadata["feature_missing_values"] = (data.isna().sum() / len(data)).to_dict()
 
     def fit(self, task, time_limit=None):
         """Trains an AutoGluon MultiModalPredictor with parsed arguments. Saves trained predictor
@@ -194,19 +212,17 @@ class AutogluonMultimodalPredictor(Predictor):
         }
 
         self.save_dataset_details(task)
-        self.predictor = MultiModalPredictor(**predictor_init_kwargs).fit(
+        self.predictor = MultiModalPredictor(**cast(Any, predictor_init_kwargs)).fit(
             task.train_data,
-            **unpack_omega_config(predictor_fit_kwargs),
+            **cast(Any, unpack_omega_config(predictor_fit_kwargs)),
             time_limit=time_limit,
         )
 
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
-        if (
-            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
-            and self.predictor.problem_type in [BINARY, MULTICLASS]
-        ):
+        assert self.predictor is not None
+        if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.predictor.problem_type in [BINARY, MULTICLASS]:
             return self.predictor.predict_proba(
                 task.test_data,
                 as_multiclass=(self.predictor.problem_type == MULTICLASS),
@@ -215,6 +231,7 @@ class AutogluonMultimodalPredictor(Predictor):
             return self.predictor.predict(task.test_data)
 
     def save_artifacts(self, path: str, task: PredictionTask):
+        assert self.predictor is not None
         artifacts = {
             "trained_model": self,
             "train_data": task.train_data,
@@ -230,9 +247,7 @@ class AutogluonMultimodalPredictor(Predictor):
             joblib.dump(artifacts, f)
 
         src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(
-            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
-        )
+        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
         if src_dir == dst_dir:
             logger.warning(
                 "Skipping model directory copy because source and destination are the same: %s",
@@ -256,7 +271,7 @@ class AutogluonTimeSeriesPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
-        self.predictor: MultiModalPredictor = None
+        self.predictor: Optional[TimeSeriesPredictor] = None
 
     def fit(self, task, time_limit=None):
         """Trains an AutoGluon TimeSeriesPredictor with parsed arguments.
@@ -281,6 +296,7 @@ class AutogluonTimeSeriesPredictor(Predictor):
         eval_metric = task.eval_metric
         if eval_metric == ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR:
             eval_metric = root_mean_square_logarithmic_error
+        assert isinstance(eval_metric, str)
         train_data_prepared, freq_str = self._prepare_time_series_data(task)
 
         train_data = TimeSeriesDataFrame.from_data_frame(
@@ -307,9 +323,9 @@ class AutogluonTimeSeriesPredictor(Predictor):
 
         logger.info("Fitting AutoGluon TimeSeriesPredictor")
 
-        self.predictor = TimeSeriesPredictor(**predictor_init_kwargs).fit(
+        self.predictor = TimeSeriesPredictor(**cast(Any, predictor_init_kwargs)).fit(
             train_data,
-            **unpack_omega_config(predictor_fit_kwargs),
+            **cast(Any, unpack_omega_config(predictor_fit_kwargs)),
             time_limit=time_limit,
         )
 
@@ -329,9 +345,7 @@ class AutogluonTimeSeriesPredictor(Predictor):
             Frequency string for AutoGluon
         """
         if task.train_id_column and task.train_id_column not in task.train_data.columns:
-            raise ValueError(
-                f"train_id_column '{task.train_id_column}' not found in training data"
-            )
+            raise ValueError(f"train_id_column '{task.train_id_column}' not found in training data")
 
         # Handle univariate time series
         if task.train_id_column is None:
@@ -367,9 +381,11 @@ class AutogluonTimeSeriesPredictor(Predictor):
         return freq_mapping.get(most_common_freq, "H")
 
     def predict(self, task: PredictionTask) -> TabularDataset:
+        assert self.predictor is not None
         return self.predictor.predict(task.train_data)
 
     def save_artifacts(self, path: str, task: PredictionTask):
+        assert self.predictor is not None
         artifacts = {
             "trained_model": self,
             "train_data": task.train_data,
@@ -385,9 +401,7 @@ class AutogluonTimeSeriesPredictor(Predictor):
             joblib.dump(artifacts, f)
 
         src_dir = os.path.abspath(ag_model_dir)
-        dst_dir = os.path.join(
-            os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep))
-        )
+        dst_dir = os.path.join(os.path.abspath(path), os.path.basename(src_dir.rstrip(os.sep)))
         if src_dir == dst_dir:
             logger.warning(
                 "Skipping model directory copy because source and destination are the same: %s",

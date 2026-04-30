@@ -4,9 +4,7 @@ from ..task import PredictionTask
 
 
 class Predictor:
-    def fit(
-        self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "Predictor":
+    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "Predictor":
         return self
 
     def predict(self, task: PredictionTask) -> Any:

@@ -96,9 +96,7 @@ class PromptGenerator(ABC):
 class TaskTypePromptGenerator(PromptGenerator):
     fields = ["reasoning", "task_type"]
 
-    def __init__(
-        self, data_description: str, train_data: pd.DataFrame, label_column: str
-    ):
+    def __init__(self, data_description: str, train_data: pd.DataFrame, label_column: str):
         super().__init__(data_description)
         self.train_data = train_data
         self.label_column = label_column
@@ -153,9 +151,7 @@ DECISION RULES (apply in this exact priority order):
 class ProblemTypePromptGenerator(PromptGenerator):
     fields = ["reasoning", "problem_type"]
 
-    def __init__(
-        self, data_description: str, train_data: pd.DataFrame, label_column: str
-    ):
+    def __init__(self, data_description: str, train_data: pd.DataFrame, label_column: str):
         super().__init__(data_description)
         self.train_data = train_data
         self.label_column = label_column
@@ -387,7 +383,7 @@ class OutputIDColumnPromptGenerator(IDColumnPromptGenerator):
 class EvalMetricPromptGenerator(PromptGenerator):
     fields = ["eval_metric"]
 
-    def __init__(self, data_description: str, metrics: str):
+    def __init__(self, data_description: str, metrics: list[str]):
         super().__init__(data_description)
         self.metrics = metrics
 

@@ -1,7 +1,7 @@
 import logging
 import os
 from collections import defaultdict
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import joblib
 import numpy as np
@@ -27,6 +27,7 @@ from ..constants import (
     MEAN_ABSOLUTE_ERROR,
     MEAN_SQUARED_ERROR,
     MULTICLASS,
+    MULTILABEL,
     R2,
     REGRESSION,
     ROC_AUC,
@@ -37,6 +38,16 @@ from ..constants import (
 from ..task import PredictionTask
 from ..utils import unpack_omega_config
 from .base import Predictor
+from .targets import (
+    per_label_problem_type,
+    series_from_binary_proba,
+    series_from_predictions,
+    split_tabular_task,
+    task_is_multilabel,
+    task_label_columns,
+    time_limit_per_label,
+    validate_binary_multilabel_targets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +84,7 @@ METRICS_TO_FEDOT = {
 PROBLEM_TO_FEDOT = {
     BINARY: "classification",
     MULTICLASS: "classification",
+    MULTILABEL: "classification",
     REGRESSION: "regression",
     TIME_SERIES: "ts_forecasting",
 }
@@ -102,23 +114,22 @@ def prepare_multi_model_data(
     data: pd.DataFrame,
     task: PredictionTask,
 ) -> MultiModalData:
+    assert task.problem_type is not None
     task_problem_type = Task(TaskTypesEnum(PROBLEM_TO_FEDOT[task.problem_type]))
     sources = {}
 
     table_features = data.copy()
-    target = (
-        data[task.label_column].to_numpy()
-        if task.label_column in data.columns
-        else None
-    )
+    label_column = task.label_column
+    target = data[label_column].to_numpy() if label_column is not None and label_column in data.columns else None
     if target is not None:
-        table_features = table_features.drop(task.label_column, axis=1)
+        assert label_column is not None
+        table_features = table_features.drop(label_column, axis=1)
 
     if task.images_column is not None:
         logger.info(f"Found images column: {task.images_column}")
         data_img = InputData.from_image(
             images=_load_images_from_dataframe(data, task.images_column),
-            labels=target,
+            labels=cast(Any, target),
             task=task_problem_type,
         )
         table_features = table_features.drop(task.images_column, axis=1)
@@ -157,70 +168,70 @@ class FedotTabularPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
-        self.predictor: Fedot = None
-        self.problem_type: str = None
+        self.predictors: Dict[str, Fedot] = {}
+        self.problem_type: Optional[str] = None
 
-    def fit(
-        self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "FedotTabularPredictor":
+    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "FedotTabularPredictor":
         eval_metric = task.eval_metric
+        assert eval_metric is not None
         self.problem_type = task.problem_type
-
-        predictor_init_kwargs = {
-            "problem": PROBLEM_TO_FEDOT[task.problem_type],
-            "timeout": time_limit,
-            "metric": METRICS_TO_FEDOT[eval_metric],
-            **unpack_omega_config(self.config.predictor_init_kwargs),
-        }
-
+        train_x, train_y, test_x = split_tabular_task(task)
+        label_columns = task_label_columns(task)
+        if task_is_multilabel(task):
+            validate_binary_multilabel_targets(train_y)
         predictor_fit_kwargs = self.config.predictor_fit_kwargs
 
         logger.info("Fitting Fedot TabularPredictor")
-        logger.info(f"predictor_init_kwargs: {predictor_init_kwargs}")
         logger.info(f"predictor_fit_kwargs: {predictor_fit_kwargs}")
 
         self.metadata |= {
-            "predictor_init_kwargs": predictor_init_kwargs,
             "predictor_fit_kwargs": predictor_fit_kwargs,
         }
-
-        train_df = task.train_data
-        label_col = task.label_column
-        if label_col not in train_df.columns:
-            raise ValueError(
-                f"Label column '{label_col}' not found in train_data. "
-                f"train_data shape={train_df.shape}, columns={list(train_df.columns)[:10]}..."
+        for label in label_columns:
+            predictor_init_kwargs = {
+                "problem": PROBLEM_TO_FEDOT[per_label_problem_type(task)],
+                "timeout": time_limit_per_label(time_limit, len(label_columns)),
+                "metric": METRICS_TO_FEDOT[eval_metric],
+                **unpack_omega_config(self.config.predictor_init_kwargs),
+            }
+            logger.info(f"predictor_init_kwargs[{label}]: {predictor_init_kwargs}")
+            predictor = Fedot(**cast(Any, predictor_init_kwargs))
+            predictor.fit(
+                train_x,
+                train_y[label],
+                **cast(Any, unpack_omega_config(predictor_fit_kwargs)),
             )
-        X_train = train_df.drop(columns=[label_col])
-        y_train = train_df[label_col]
-
-        self.predictor = Fedot(**predictor_init_kwargs)
-        self.predictor.fit(
-            X_train,
-            y_train,
-            **unpack_omega_config(predictor_fit_kwargs),
-        )
-
-        self.metadata["graph_structure"] = graph_structure(
-            self.predictor.current_pipeline
-        )
+            self.predictors[label] = predictor
+            self.metadata["predictor_init_kwargs"][label] = predictor_init_kwargs
+            assert predictor.current_pipeline is not None
+            self.metadata["graph_structure"][label] = graph_structure(predictor.current_pipeline)
+        self.metadata["test_columns"] = test_x.columns.to_list()
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
-        # Drop label column from test data if it exists and preserve original index
-        test_features = task.test_data.drop(
-            columns=[task.label_column], errors="ignore"
-        )
-        if (
-            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
-            and self.problem_type in [BINARY, MULTICLASS]
-        ):
-            predictions = self.predictor.predict_proba(test_features)
-        else:
-            predictions = self.predictor.predict(test_features)
-        return pd.DataFrame(
-            predictions, columns=[task.label_column], index=task.test_data.index
-        )
+        _, _, test_x = split_tabular_task(task)
+        predictions = []
+        label_problem_type = per_label_problem_type(task)
+        label_columns = task_label_columns(task)
+        for label in label_columns:
+            predictor = self.predictors[label]
+            if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and label_problem_type in [BINARY, MULTICLASS]:
+                predictions.append(
+                    series_from_binary_proba(
+                        predictor.predict_proba(test_x),
+                        label=label,
+                        index=task.test_data.index,
+                    )
+                )
+            else:
+                predictions.append(
+                    series_from_predictions(
+                        predictor.predict(test_x),
+                        label=label,
+                        index=task.test_data.index,
+                    )
+                )
+        return pd.concat(predictions, axis=1)
 
     def save_artifacts(self, path: str, task: PredictionTask):
         artifacts = {
@@ -235,20 +246,22 @@ class FedotTabularPredictor(Predictor):
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
-        self.predictor.current_pipeline.save(path)
+        for label, predictor in self.predictors.items():
+            assert predictor.current_pipeline is not None
+            predictor.current_pipeline.save(os.path.join(path, f"fedot_{label}"))
 
 
 class FedotMultiModalPredictor(Predictor):
     def __init__(self, config: Any):
         self.config = config
         self.metadata: Dict[str, Any] = defaultdict(dict)
-        self.predictor: Fedot = None
-        self.problem_type: str = None
+        self.predictor: Optional[Fedot] = None
+        self.problem_type: Optional[str] = None
 
-    def fit(
-        self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "FedotMultiModalPredictor":
+    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "FedotMultiModalPredictor":
         eval_metric = task.eval_metric
+        assert eval_metric is not None
+        assert task.problem_type is not None
         self.problem_type = task.problem_type
 
         predictor_init_kwargs = {
@@ -258,11 +271,7 @@ class FedotMultiModalPredictor(Predictor):
             **unpack_omega_config(self.config.predictor_init_kwargs),
         }
 
-        train_only_cols = [
-            col
-            for col in task.columns_in_train_but_not_test
-            if col != task.label_column
-        ]
+        train_only_cols = [col for col in task.columns_in_train_but_not_test if col != task.label_column]
         aligned_train = task.train_data.drop(columns=train_only_cols, errors="ignore")
         train_data = prepare_multi_model_data(aligned_train, task)
 
@@ -277,35 +286,28 @@ class FedotMultiModalPredictor(Predictor):
             "predictor_fit_kwargs": predictor_fit_kwargs,
         }
 
-        self.predictor = Fedot(**predictor_init_kwargs)
-        self.predictor.fit(
-            train_data, task.label_column, **unpack_omega_config(predictor_fit_kwargs)
-        )
+        self.predictor = Fedot(**cast(Any, predictor_init_kwargs))
+        label_column = task.label_column
+        assert label_column is not None
+        self.predictor.fit(train_data, label_column, **cast(Any, unpack_omega_config(predictor_fit_kwargs)))
 
-        self.metadata["graph_structure"] = graph_structure(
-            self.predictor.current_pipeline
-        )
+        assert self.predictor.current_pipeline is not None
+        self.metadata["graph_structure"] = graph_structure(self.predictor.current_pipeline)
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
-        test_data = (
-            task.test_data.drop(task.label_column, axis=1)
-            if task.label_column in task.test_data
-            else task.test_data
-        )
+        assert self.predictor is not None
+        label_column = task.label_column
+        assert label_column is not None
+        test_data = task.test_data.drop(label_column, axis=1) if label_column in task.test_data else task.test_data
 
         test_data = prepare_multi_model_data(test_data, task)
 
-        if (
-            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
-            and self.problem_type in [BINARY, MULTICLASS]
-        ):
+        if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [BINARY, MULTICLASS]:
             predictions = self.predictor.predict_proba(test_data)
         else:
             predictions = self.predictor.predict(test_data)
-        return pd.DataFrame(
-            predictions, columns=[task.label_column], index=task.test_data.index
-        )
+        return pd.DataFrame(predictions, columns=pd.Index([label_column]), index=task.test_data.index)
 
     def save_artifacts(self, path: str, task: PredictionTask):
         artifacts = {
@@ -320,6 +322,8 @@ class FedotMultiModalPredictor(Predictor):
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
 
+        assert self.predictor is not None
+        assert self.predictor.current_pipeline is not None
         self.predictor.current_pipeline.save(path)
 
 
@@ -332,11 +336,11 @@ class FedotTimeSeriesPredictor(Predictor):
         self.eval_metric: Optional[str] = None
         self.historical_data: Optional[np.ndarray] = None
 
-    def fit(
-        self, task: PredictionTask, time_limit: Optional[float] = None
-    ) -> "FedotTimeSeriesPredictor":
+    def fit(self, task: PredictionTask, time_limit: Optional[float] = None) -> "FedotTimeSeriesPredictor":
         self.eval_metric = task.eval_metric
         self.problem_type = task.problem_type
+        assert self.problem_type is not None
+        assert self.eval_metric is not None
 
         predictor_init_kwargs = {
             "problem": PROBLEM_TO_FEDOT[self.problem_type],
@@ -353,20 +357,19 @@ class FedotTimeSeriesPredictor(Predictor):
         }
 
         input_data = self.prepare_data(task, is_for_forecast=False)
-        self.predictor = Fedot(**predictor_init_kwargs)
+        self.predictor = Fedot(**cast(Any, predictor_init_kwargs))
         self.predictor.fit(input_data)
 
-        self.metadata["graph_structure"] = graph_structure(
-            self.predictor.current_pipeline
-        )
+        assert self.predictor.current_pipeline is not None
+        self.metadata["graph_structure"] = graph_structure(self.predictor.current_pipeline)
         return self
 
     def predict(self, task: PredictionTask) -> TabularDataset:
+        assert self.predictor is not None
+        label_column = task.label_column
+        assert label_column is not None
         input_data = self.prepare_data(task, is_for_forecast=True)
-        if (
-            task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC
-            and self.problem_type in [BINARY, MULTICLASS]
-        ):
+        if task.eval_metric in CLASSIFICATION_PROBA_EVAL_METRIC and self.problem_type in [BINARY, MULTICLASS]:
             predictions = self.predictor.predict_proba(input_data)
         else:
             predictions = self.predictor.predict(input_data)
@@ -374,7 +377,7 @@ class FedotTimeSeriesPredictor(Predictor):
         pred_len = len(predictions)
         return pd.DataFrame(
             predictions,
-            columns=[task.label_column],
+            columns=pd.Index([label_column]),
             index=task.test_data.index[:pred_len],
         )
 
@@ -390,11 +393,11 @@ class FedotTimeSeriesPredictor(Predictor):
 
         with open(full_save_path_pkl_file, "wb") as f:
             joblib.dump(artifacts, f)
+        assert self.predictor is not None
+        assert self.predictor.current_pipeline is not None
         self.predictor.current_pipeline.save(path)
 
-    def prepare_data(
-        self, task: PredictionTask, is_for_forecast: Optional[bool] = False
-    ) -> np.ndarray:
+    def prepare_data(self, task: PredictionTask, is_for_forecast: Optional[bool] = False) -> np.ndarray:
         data = task.test_data if is_for_forecast else task.train_data
 
         timestamp_col = task.timestamp_column
@@ -405,6 +408,7 @@ class FedotTimeSeriesPredictor(Predictor):
         series = data.to_numpy().squeeze()
 
         if is_for_forecast:
+            assert self.historical_data is not None
             return self.historical_data
 
         self.historical_data = series

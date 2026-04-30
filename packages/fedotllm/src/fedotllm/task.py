@@ -14,6 +14,7 @@ from .constants import (
     BINARY,
     DEFAULT_FORECAST_HORIZON,
     DESCRIPTION,
+    MULTILABEL,
     MULTIMODAL,
     NO_TIMESTAMP_COLUMN_IDENTIFIED,
     OUTPUT,
@@ -47,7 +48,7 @@ class PredictionTask:
             "description": description,
             "data_description_file": None,
             "task_type": None,
-            "label_column": None,
+            "label_columns": [],
             "problem_type": None,
             "eval_metric": None,  # string, keying Autogluon Tabular metrics
             "test_id_column": None,
@@ -69,7 +70,7 @@ class PredictionTask:
         }
 
         # TODO: each data split can have multiple files
-        self.dataset_mapping: Dict[str, Union[Path, TabularDataset]] = {
+        self.dataset_mapping: Dict[str, Union[Path, TabularDataset, None]] = {
             TRAIN: None,
             TEST: None,
             OUTPUT: None,
@@ -80,9 +81,7 @@ class PredictionTask:
         return f"PredictionTask(name={self.metadata['name']}, description={self.metadata['description'][:100]}, {len(self.dataset_mapping)} datasets)"
 
     @classmethod
-    def from_path(
-        cls, task_root_dir: Path, name: Optional[str] = None
-    ) -> "PredictionTask":
+    def from_path(cls, task_root_dir: Path, name: Optional[str] = None) -> "PredictionTask":
         # Get all filenames under task_root_dir
         task_data_filenames = []
         for entry in task_root_dir.iterdir():
@@ -97,12 +96,10 @@ class PredictionTask:
             ),
         )
 
-    def load_task_data(self, dataset_key: str) -> pd.DataFrame:
+    def load_task_data(self, dataset_key: str) -> Optional[pd.DataFrame]:
         """Load the competition file for the task."""
         if dataset_key not in self.dataset_mapping:
-            raise ValueError(
-                f"Dataset type {dataset_key} not found for task {self.metadata.get('name', 'Unknown')}"
-            )
+            raise ValueError(f"Dataset type {dataset_key} not found for task {self.metadata.get('name', 'Unknown')}")
         dataset = self.dataset_mapping[dataset_key]
         if dataset is None:
             return None
@@ -139,13 +136,9 @@ class PredictionTask:
                     self.filepaths[0].parent / v,
                 )
                 if not filepath.is_file():
-                    raise ValueError(
-                        f"File {v} not found in task {self.metadata['name']}"
-                    )
+                    raise ValueError(f"File {v} not found in task {self.metadata['name']}")
                 else:
-                    self.dataset_mapping[k] = (
-                        load_pd(filepath) if self.cache_data else filepath
-                    )
+                    self.dataset_mapping[k] = load_pd(filepath) if self.cache_data else filepath
             else:
                 raise TypeError(f"Unsupported type for dataset_mapping: {type(v)}")
 
@@ -163,7 +156,10 @@ class PredictionTask:
 
     @property
     def train_data(self) -> TabularDataset:
-        return self.load_task_data(TRAIN)
+        data = self.load_task_data(TRAIN)
+        if data is None:
+            raise ValueError("Train data is not set")
+        return data
 
     @train_data.setter
     def train_data(self, data: Union[str, Path, TabularDataset]) -> None:
@@ -177,6 +173,7 @@ class PredictionTask:
         if test_data is None:
             if self.task_type == TIME_SERIES:
                 return self._create_time_series_test_data()
+            raise ValueError("Test data is not set")
         return test_data
 
     @test_data.setter
@@ -186,7 +183,7 @@ class PredictionTask:
         self._set_task_files({TEST: data})
 
     @property
-    def sample_submission_data(self) -> TabularDataset:
+    def sample_submission_data(self) -> Optional[TabularDataset]:
         return self.load_task_data(OUTPUT)
 
     @sample_submission_data.setter
@@ -198,7 +195,7 @@ class PredictionTask:
         self._set_task_files({OUTPUT: data})
 
     @property
-    def static_features_data(self) -> TabularDataset:
+    def static_features_data(self) -> Optional[TabularDataset]:
         return self.load_task_data(STATIC_FEATURES)
 
     @static_features_data.setter
@@ -239,28 +236,36 @@ class PredictionTask:
         if sample_submission_data is not None:
             return sample_submission_data.columns.to_list()
 
-        label_column = self.metadata.get("label_column")
-        if not label_column:
+        label_columns = self.label_columns
+        if not label_columns:
             return None
 
         if self.task_type == TIME_SERIES:
             timestamp_column = self.metadata.get("timestamp_column")
-            return [col for col in [timestamp_column, label_column] if col]
+            return [col for col in [timestamp_column, self.label_column] if col]
 
-        return [label_column]
+        return label_columns
+
+    @property
+    def label_columns(self) -> List[str]:
+        if self.metadata.get("label_columns"):
+            return list(self.metadata["label_columns"])
+        return self._infer_label_columns_from_sample_submission_data()
+
+    @label_columns.setter
+    def label_columns(self, label_columns: Union[str, List[str]]) -> None:
+        if isinstance(label_columns, str):
+            label_columns = [label_columns]
+        self.metadata["label_columns"] = list(label_columns)
 
     @property
     def label_column(self) -> Optional[str]:
-        """Return the label column for the task."""
-        if "label_column" in self.metadata and self.metadata["label_column"]:
-            return self.metadata["label_column"]
-        else:
-            # should ideally never be called after LabelColumnInference has run
-            return self._infer_label_column_from_sample_submission_data()
+        label_columns = self.label_columns
+        return label_columns[0] if label_columns else None
 
     @label_column.setter
-    def label_column(self, label_column: str) -> None:
-        self.metadata["label_column"] = label_column
+    def label_column(self, label_column: Union[str, List[str]]) -> None:
+        self.label_columns = label_column
 
     @property
     def timestamp_column(self) -> Optional[str]:
@@ -311,9 +316,7 @@ class PredictionTask:
     def output_id_column(self) -> Optional[str]:
         return self.metadata.get(
             "output_id_column",
-            self.sample_submission_data.columns[0]
-            if self.sample_submission_data is not None
-            else None,
+            self.sample_submission_data.columns[0] if self.sample_submission_data is not None else None,
         )
 
     @output_id_column.setter
@@ -331,9 +334,7 @@ class PredictionTask:
     @property
     def eval_metric(self) -> Optional[str]:
         return self.metadata["eval_metric"] or (
-            PREFERED_METRIC_BY_PROBLEM_TYPE[self.problem_type]
-            if self.problem_type
-            else None
+            PREFERED_METRIC_BY_PROBLEM_TYPE[self.problem_type] if self.problem_type else None
         )
 
     @eval_metric.setter
@@ -350,43 +351,35 @@ class PredictionTask:
     def text_columns(self) -> List[str]:
         return self._find_text_columns_in_train()
 
-    def _infer_label_column_from_sample_submission_data(self) -> Optional[str]:
+    @property
+    def is_multilabel(self) -> bool:
+        return len(self.label_columns) > 1
+
+    def _infer_label_columns_from_sample_submission_data(self) -> List[str]:
         sample_submission_data = self.sample_submission_data
         if sample_submission_data is None:
-            return None
+            return []
 
-        # Assume the first output column is the ID column and ignore it
-        relevant_output_cols = sample_submission_data.columns.to_list()[1:]
+        relevant_output_cols = sample_submission_data.columns.to_list()
+        if self.output_id_column in relevant_output_cols:
+            relevant_output_cols = [col for col in relevant_output_cols if col != self.output_id_column]
         if not relevant_output_cols:
-            return None
+            return []
 
-        # Check if any of the output columns exists in the train data
-        existing_output_cols = [
-            col for col in relevant_output_cols if col in self.train_data.columns
-        ]
+        existing_output_cols = [col for col in relevant_output_cols if col in self.train_data.columns]
+        if len(existing_output_cols) == len(relevant_output_cols):
+            return existing_output_cols
 
-        # Case 1: If there's only one output column in the train data, use it
         if len(existing_output_cols) == 1:
-            return existing_output_cols[0]
+            return existing_output_cols
 
-        # Case 2: For example in some multiclass problems, look for a column
-        #         whose unique values match or contain the output columns
         output_set = set(col.lower() for col in relevant_output_cols)
         for col in self.train_data.columns:
-            unique_values = set(
-                str(val).lower()
-                for val in self.train_data[col].unique()
-                if pd.notna(val)
-            )
-            if output_set and (
-                output_set == unique_values or output_set.issubset(unique_values)
-            ):
-                return col
+            unique_values = set(str(val).lower() for val in self.train_data[col].unique() if pd.notna(val))
+            if output_set and (output_set == unique_values or output_set.issubset(unique_values)):
+                return [col]
 
-        # If no suitable column is found, raise an exception
-        raise ValueError(
-            "Unable to infer the label column. Please specify it manually."
-        )
+        raise ValueError("Unable to infer the label columns. Please specify them manually.")
 
     def _find_text_columns_in_train(self) -> List[str]:
         if self.train_data is not None:
@@ -402,15 +395,11 @@ class PredictionTask:
     def _find_timestamp_column_in_train(self) -> Optional[str]:
         """Find column that contain timestamp"""
         if self.train_data is not None:
-            datetime_cols = [
-                col
-                for col in self.train_data.columns
-                if self.train_data[col].dtype.kind == "M"
-            ]
+            datetime_cols = [col for col in self.train_data.columns if self.train_data[col].dtype.kind == "M"]
             if len(datetime_cols) > 0:
                 return datetime_cols[0]
             for column in self.train_data.columns:
-                if self.label_column and column == self.label_column:
+                if column in self.label_columns:
                     continue
                 if self.train_data[column].dtype.kind in ("i", "u", "f"):
                     continue
@@ -435,7 +424,7 @@ class PredictionTask:
         return None
 
     def _find_task_type_in_description(self) -> Optional[str]:
-        desc = self.description.lower()
+        desc = (self.description or "").lower()
         # Check in priority order
         if any(kw in desc for kw in ["tabular"]):
             return TABULAR
@@ -446,18 +435,19 @@ class PredictionTask:
         return None
 
     def _find_problem_type_in_description(self) -> Optional[str]:
-        if "regression" in self.description.lower():
+        description = (self.description or "").lower()
+        if "regression" in description:
             return REGRESSION
-        elif "classification" in self.description.lower():
+        elif len(self.label_columns) > 1:
+            return MULTILABEL
+        elif "classification" in description:
             return BINARY
         else:
             return None
 
-    def _infer_time_series_frequency(self, index: pd.DatetimeIndex) -> pd.DateOffset:
+    def _infer_time_series_frequency(self, index: pd.DatetimeIndex) -> pd.offsets.BaseOffset:
         if len(index) < 2:
-            raise ValueError(
-                "At least two timestamps are required to infer forecast frequency."
-            )
+            raise ValueError("At least two timestamps are required to infer forecast frequency.")
 
         inferred = pd.infer_freq(index)
         if inferred is not None:
@@ -470,9 +460,10 @@ class PredictionTask:
         return to_offset(diffs.mode().iloc[0])
 
     def _create_time_series_test_data(self) -> TabularDataset:
-        history_index = pd.DatetimeIndex(
-            self.train_data[self.timestamp_column], name=self.timestamp_column
-        )
+        assert self.timestamp_column is not None
+        label_column = self.label_column
+        assert label_column is not None
+        history_index = pd.DatetimeIndex(self.train_data[self.timestamp_column], name=self.timestamp_column)
         frequency = self._infer_time_series_frequency(history_index)
         forecast_index = pd.date_range(
             start=history_index[-1] + frequency,
@@ -480,9 +471,7 @@ class PredictionTask:
             freq=frequency,
             name=self.timestamp_column,
         )
-        return pd.DataFrame(
-            index=forecast_index, columns=[self.label_column], data=np.nan
-        )
+        return pd.DataFrame(index=forecast_index, columns=pd.Index([label_column]), data=np.nan)
 
 
 def _safe_int_conversion(string_value: str):

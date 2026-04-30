@@ -160,15 +160,11 @@ CAPTIONS = [
     "Загрузите train (обязательно), test (обязательно) и output (опционально)",
 ]
 
-LOGO_PATH = str(
-    Path(__file__).resolve().parent.parent.parent / "static" / "page_icon.png"
-)
+LOGO_PATH = str(Path(__file__).resolve().parent.parent.parent / "static" / "page_icon.png")
 SUCCESS_MESSAGE = """
         🎉 Готово! Если инструмент оказался полезен, будем рады звезде на [GitHub](https://github.com/AaLexUser/Fedot-assistant) ⭐
         """
-S3_URL = (
-    "https://drive.google.com/uc?export=download&id=1N4GNZ69yTEIUT-XDmXrx35CTVfwecMwh"
-)
+S3_URL = "https://drive.google.com/uc?export=download&id=1N4GNZ69yTEIUT-XDmXrx35CTVfwecMwh"
 LOCAL_ZIP_PATH = str(get_ui_sample_dataset_archive_path())
 EXTRACT_DIR = str(get_ui_sample_dataset_dir())
 IGNORED_MESSAGES = [

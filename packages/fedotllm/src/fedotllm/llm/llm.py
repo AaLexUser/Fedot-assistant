@@ -4,7 +4,7 @@ import logging
 import os
 import pprint
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from dotenv import load_dotenv
 from langfuse.decorators import observe
@@ -53,9 +53,7 @@ class AssistantChatOpenAI:
         else:
             raise Exception("OpenAI API env variable FEDOTLLM_LLM_API_KEY not set")
 
-        logger.info(
-            f"FedotLLM is using model {config.model} to assist you with the task."
-        )
+        logger.info(f"FedotLLM is using model {config.model} to assist you with the task.")
 
         self.client = OpenAI(
             api_key=api_key,
@@ -139,7 +137,7 @@ class AssistantChatOpenAI:
             )
             return cached_content
 
-        request_kwargs = {
+        request_kwargs: dict[str, Any] = {
             "messages": messages,
             "model": self.model,
             "temperature": self.temperature,
@@ -148,7 +146,7 @@ class AssistantChatOpenAI:
         if self.extra_body is not None:
             request_kwargs["extra_body"] = self.extra_body
 
-        response = self.client.chat.completions.create(**request_kwargs)
+        response = self.client.chat.completions.create(**cast(Any, request_kwargs))
 
         if getattr(response, "error", None):
             raise RuntimeError(f"LLM request failed: {response.error}")
@@ -157,12 +155,8 @@ class AssistantChatOpenAI:
         if not choices:
             raise RuntimeError("LLM response did not include any choices")
 
-        prompt_tokens = (
-            getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
-        )
-        completion_tokens = (
-            getattr(getattr(response, "usage", None), "completion_tokens", 0) or 0
-        )
+        prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
+        completion_tokens = getattr(getattr(response, "usage", None), "completion_tokens", 0) or 0
         content = getattr(getattr(choices[0], "message", None), "content", None)
         if content is None:
             # Log response details for debugging before retrying

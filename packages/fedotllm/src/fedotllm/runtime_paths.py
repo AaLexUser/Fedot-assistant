@@ -29,15 +29,11 @@ def get_ui_data_dir() -> Path:
 
 
 def get_ui_sample_dataset_dir() -> Path:
-    return _resolve_path(
-        "FEDOTLLM_UI_SAMPLE_DATASET_DIR", get_data_dir() / "sample_dataset"
-    )
+    return _resolve_path("FEDOTLLM_UI_SAMPLE_DATASET_DIR", get_data_dir() / "sample_dataset")
 
 
 def get_ui_sample_dataset_archive_path() -> Path:
-    return _resolve_path(
-        "FEDOTLLM_UI_SAMPLE_DATASET_ARCHIVE", get_data_dir() / "sample_data.zip"
-    )
+    return _resolve_path("FEDOTLLM_UI_SAMPLE_DATASET_ARCHIVE", get_data_dir() / "sample_data.zip")
 
 
 def get_artifacts_dir() -> Path:

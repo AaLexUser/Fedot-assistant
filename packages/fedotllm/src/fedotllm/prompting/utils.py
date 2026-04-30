@@ -59,9 +59,7 @@ def _resolve_valid_value(
 
     for valid_value, valid_value_string in zip(valid_values_list, valid_value_strings):
         valid_normalized = _normalize_pathlike(valid_value_string)
-        basename_to_values[PurePosixPath(valid_normalized).name].append(
-            valid_value_string
-        )
+        basename_to_values[PurePosixPath(valid_normalized).name].append(valid_value_string)
         if valid_normalized == parsed_normalized:
             return valid_value_string
         if valid_normalized.endswith(f"/{parsed_normalized}"):
@@ -70,8 +68,7 @@ def _resolve_valid_value(
     basename_matches = [
         valid_value_string
         for valid_value_string in valid_value_strings
-        if PurePosixPath(_normalize_pathlike(valid_value_string)).name
-        == PurePosixPath(parsed_normalized).name
+        if PurePosixPath(_normalize_pathlike(valid_value_string)).name == PurePosixPath(parsed_normalized).name
     ]
     if len(basename_matches) == 1:
         return basename_matches[0]
@@ -149,10 +146,10 @@ def parse_json(raw_reply: str) -> Optional[Dict[str, Any]]:
 
     def try_json_loads(data: str) -> Dict[str, Any] | None:
         try:
-            repaired_json = json_repair.repair_json(
-                data, ensure_ascii=False, return_objects=True
-            )
-            return repaired_json if repaired_json != "" else None
+            repaired_json = json_repair.repair_json(data, ensure_ascii=False, return_objects=True)
+            if repaired_json == "":
+                return None
+            return repaired_json if isinstance(repaired_json, dict) else None
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error: {e}")
             return None
@@ -228,9 +225,7 @@ def check_json_values(
                     )
                     parsed_json[key] = fallback_value
                 else:
-                    raise ValueError(
-                        f"Unrecognized value: {parsed_value} for key {key} parsed by the LLM."
-                    )
+                    raise ValueError(f"Unrecognized value: {parsed_value} for key {key} parsed by the LLM.")
             else:
                 parsed_json[key] = resolved_value
     return parsed_json
@@ -267,10 +262,7 @@ def parse_and_check_json(
     if json_obj := parse_json(raw_reply):
         for key in expected_keys:
             if key not in json_obj:
-                error = (
-                    f"Got invalid return object. Expected key `{key}` "
-                    f"to be present, but got {json_obj}"
-                )
+                error = f"Got invalid return object. Expected key `{key}` to be present, but got {json_obj}"
                 logging.error(error)
                 raise OutputParserException(error)
         json_obj = {key: json_obj[key] for key in expected_keys}

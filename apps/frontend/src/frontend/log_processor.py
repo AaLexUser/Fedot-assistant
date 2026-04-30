@@ -85,9 +85,7 @@ def show_logs():
                             show_log_line(log)
         with tab2:
             log_container = st.empty()
-            log_container.text_area(
-                "Логи выполнения", st.session_state.logs, height=400
-            )
+            log_container.text_area("Логи выполнения", st.session_state.logs, height=400)
 
 
 def format_log_line(line):
@@ -132,35 +130,23 @@ def process_realtime_logs(line):
         if "model training complete" in line.lower():
             st.session_state.show_remaining_time = False
         with st.session_state.stage_status[st.session_state.current_stage]:
-            if (
-                "model training starts" in line.lower()
-                and not st.session_state.show_remaining_time
-            ):
+            if "model training starts" in line.lower() and not st.session_state.show_remaining_time:
                 st.session_state.progress_bar = st.progress(0, text="Время обучения:")
                 st.session_state.show_remaining_time = True
-                st.session_state.elapsed_time = (
-                    time.time() - st.session_state.start_time
-                )
+                st.session_state.elapsed_time = time.time() - st.session_state.start_time
                 st.session_state.remaining_time = (
-                    TIME_LIMIT_MAPPING[st.session_state.time_limit]
-                    - st.session_state.elapsed_time
+                    TIME_LIMIT_MAPPING[st.session_state.time_limit] - st.session_state.elapsed_time
                 )
                 st.session_state.start_model_train_time = time.time()
             if st.session_state.show_remaining_time:
-                st.session_state.elapsed_time = (
-                    time.time() - st.session_state.start_model_train_time
-                )
+                st.session_state.elapsed_time = time.time() - st.session_state.start_model_train_time
                 progress_bar = st.session_state.progress_bar
-                current_time = min(
-                    st.session_state.elapsed_time, st.session_state.remaining_time
-                )
+                current_time = min(st.session_state.elapsed_time, st.session_state.remaining_time)
                 progress = current_time / st.session_state.remaining_time
                 time_ratio = f"Время обучения: | ({progress:.1%})"
                 progress_bar.progress(progress, text=time_ratio)
             if not st.session_state.show_remaining_time:
-                st.session_state.stage_container[st.session_state.current_stage].append(
-                    line
-                )
+                st.session_state.stage_container[st.session_state.current_stage].append(line)
                 show_log_line(line)
 
 
@@ -204,10 +190,7 @@ def messages():
                 for remaining_line in process.stdout:
                     remaining_line = format_log_line(remaining_line)
                     st.session_state.logs += remaining_line
-                    if any(
-                        indicator in remaining_line.lower()
-                        for indicator in model_path_indicators
-                    ):
+                    if any(indicator in remaining_line.lower() for indicator in model_path_indicators):
                         model_path = parse_model_path(remaining_line)
                         if model_path:
                             st.session_state.model_path = model_path
@@ -219,10 +202,7 @@ def messages():
                         status_container.info(STAGE_TO_STATUS_BAR[stage_msg])
                         break
             process_realtime_logs(line)
-            if (
-                st.session_state.current_stage
-                and st.session_state.current_stage in st.session_state.stage_status
-            ):
+            if st.session_state.current_stage and st.session_state.current_stage in st.session_state.stage_status:
                 st.session_state.stage_status[st.session_state.current_stage].update(
                     state="running",
                 )

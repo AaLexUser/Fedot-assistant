@@ -2,7 +2,7 @@ import logging
 import os
 import time
 import warnings
-from typing import Any, Mapping, Tuple
+from typing import Any, Callable, Mapping, Tuple, cast
 
 import pandas as pd
 from fedotllm.constants import BINARY, MULTICLASS
@@ -43,11 +43,7 @@ def _build_caafe_completion_kwargs(
     completion_params: Mapping[str, Any], request_kwargs: Mapping[str, Any]
 ) -> dict[str, Any]:
     completion_kwargs = {
-        key: (
-            OmegaConf.to_container(value, resolve=True)
-            if OmegaConf.is_config(value)
-            else value
-        )
+        key: (OmegaConf.to_container(value, resolve=True) if OmegaConf.is_config(value) else value)
         for key, value in {**completion_params, **request_kwargs}.items()
     }
     completion_kwargs.pop("max_completion_tokens", None)
@@ -62,7 +58,7 @@ def _apply_caafe_integration_patches() -> None:
     if _CAAFE_INTEGRATION_PATCHED:
         return
 
-    _orig_extract = _caafe_prompt_utils.extract_code
+    _orig_extract = cast(Callable[[str], str], _caafe_prompt_utils.extract_code)
 
     def extract_code_safe(response: str) -> str:
         if response is None:
@@ -74,22 +70,17 @@ def _apply_caafe_integration_patches() -> None:
             )
         if isinstance(response, str) and response.strip() == "":
             raise ValueError(
-                "CAAFE LLM returned only whitespace after retries. "
-                "Check CAAFE_LLM_MODEL and API credentials."
+                "CAAFE LLM returned only whitespace after retries. Check CAAFE_LLM_MODEL and API credentials."
             )
         return _orig_extract(response)
 
-    def query_retry_empty(self, messages: str | list[dict[str, Any]], **kwargs):
+    def query_retry_empty(self: Any, messages: str | list[dict[str, Any]], **kwargs: Any) -> str | None:
         import litellm
 
         max_retries, backoff_s = _caafe_empty_content_retry_settings()
-        nudge = os.getenv(
-            "CAAFE_LLM_EMPTY_RETRY_NUDGE", _CAAFE_EMPTY_RETRY_NUDGE_DEFAULT
-        )
+        nudge = os.getenv("CAAFE_LLM_EMPTY_RETRY_NUDGE", _CAAFE_EMPTY_RETRY_NUDGE_DEFAULT)
         msg_list: list[dict[str, Any]] = (
-            [{"role": "user", "content": messages}]
-            if isinstance(messages, str)
-            else list(messages)
+            [{"role": "user", "content": messages}] if isinstance(messages, str) else list(messages)
         )
         last: str | None = None
         for attempt in range(1, max_retries + 1):
@@ -113,9 +104,9 @@ def _apply_caafe_integration_patches() -> None:
                 time.sleep(delay)
         return last
 
-    _caafe_litellm_client.LiteLLMClient.query = query_retry_empty
-    _caafe_prompt_utils.extract_code = extract_code_safe
-    _caafe_prompt_generator.extract_code = extract_code_safe
+    setattr(_caafe_litellm_client.LiteLLMClient, "query", query_retry_empty)
+    setattr(_caafe_prompt_utils, "extract_code", extract_code_safe)
+    setattr(_caafe_prompt_generator, "extract_code", extract_code_safe)
     _CAAFE_INTEGRATION_PATCHED = True
 
 
@@ -142,9 +133,7 @@ class CAAFETransformer(BaseFeatureTransformer):
         if self.eval_model == "tab_pfn":
             from tabpfn import TabPFNClassifier
 
-            clf_no_feat_eng = TabPFNClassifier(
-                device="cpu", N_ensemble_configurations=16
-            )
+            clf_no_feat_eng = TabPFNClassifier(device="cpu", n_estimators=16)
         elif self.eval_model == "lightgdm":
             from lightgbm import LGBMClassifier
 
@@ -169,15 +158,15 @@ class CAAFETransformer(BaseFeatureTransformer):
         train_X: pd.DataFrame,
         train_y: pd.Series,
         *,
-        target_column_name: str,
-        problem_type: str = "binary",
+        target_column_name: str | None = None,
+        problem_type: str | None = "binary",
         dataset_description: str = "",
         **kwargs,
     ) -> None:
+        if target_column_name is None:
+            raise ValueError("CAAFE requires a target column name")
         if problem_type not in (BINARY, MULTICLASS):
-            logger.info(
-                "Feature transformer CAAFE only supports classification problems."
-            )
+            logger.info("Feature transformer CAAFE only supports classification problems.")
             return
 
         categorical_target = not pd.api.types.is_numeric_dtype(train_y)
@@ -195,9 +184,7 @@ class CAAFETransformer(BaseFeatureTransformer):
         logger.info("CAAFE generated features:")
         logger.info(self.caafe_clf.code)
 
-    def _transform_dataframes(
-        self, train_X: pd.DataFrame, test_X: pd.DataFrame
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def _transform_dataframes(self, train_X: pd.DataFrame, test_X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         transformed_train_X = run_llm_code(self.caafe_clf.code, train_X)
         transformed_test_X = run_llm_code(self.caafe_clf.code, test_X)
 

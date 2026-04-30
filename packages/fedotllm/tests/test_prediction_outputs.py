@@ -14,7 +14,7 @@ def _build_task(sample_submission_data: pd.DataFrame) -> PredictionTask:
     task.sample_submission_data = sample_submission_data
     task.test_id_column = "PassengerId"
     task.output_id_column = "PassengerId"
-    task.label_column = "Survived"
+    task.label_columns = ["Survived"]
     return task
 
 

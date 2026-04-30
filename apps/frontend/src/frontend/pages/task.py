@@ -51,14 +51,10 @@ def update_config_overrides():
     """
     config_overrides = []
     if st.session_state.time_limit:
-        config_overrides.append(
-            f"time_limit={TIME_LIMIT_MAPPING[st.session_state.time_limit]}"
-        )
+        config_overrides.append(f"time_limit={TIME_LIMIT_MAPPING[st.session_state.time_limit]}")
     if st.session_state.llm:
         config_overrides.append(f"llm.model={LLM_MAPPING[st.session_state.llm]}")
-        config_overrides.append(
-            f"llm.base_url={BASE_URL_MAPPING[st.session_state.llm]}"
-        )
+        config_overrides.append(f"llm.base_url={BASE_URL_MAPPING[st.session_state.llm]}")
 
     if st.session_state.automl_engine:
         config_overrides.append(f"automl.enabled={st.session_state.automl_engine}")
@@ -76,6 +72,8 @@ def store_value(key):
     st.session_state[key] = st.session_state["_" + key]
     if key == "preset":
         preset_config = PRESET_DEFAULT_CONFIG.get(st.session_state.preset)
+        if preset_config is None:
+            return
         st.session_state["time_limit"] = preset_config.get("time_limit")
         st.session_state["feature_generation"] = preset_config.get("feature_generation")
 
@@ -237,16 +235,12 @@ def run_assistant_process(data_dir):
     if st.session_state.preset:
         command.extend(["--presets", PRESET_MAPPING[st.session_state.preset]])
     if st.session_state.config_overrides:
-        command.extend(
-            ["--config_overrides", ",".join(st.session_state.config_overrides)]
-        )
+        command.extend(["--config_overrides", ",".join(st.session_state.config_overrides)])
     command.extend(["--output-filename", output_filename])
     st.session_state.output_file = None
     st.session_state.output_filename = output_filename
     try:
-        process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         st.session_state.process = process
         st.session_state.pid = process.pid
     except Exception as e:
@@ -286,10 +280,7 @@ def download_output_button():
     """
     Create and display a download button for the output file.
     """
-    if (
-        st.session_state.output_file is not None
-        and st.session_state.task_running is False
-    ):
+    if st.session_state.output_file is not None and st.session_state.task_running is False:
         output_file = st.session_state.output_file
         output_filename = st.session_state.output_filename
         final_name = os.path.basename(output_filename)
@@ -461,9 +452,7 @@ def _extract_zip_strip_toplevel(zip_path: str, extract_dir: str):
             first_parts = members[0].split("/")
             toplevel = first_parts[0] if first_parts else ""
 
-            has_toplevel = all(
-                m.startswith(toplevel + "/") for m in members if m.strip()
-            )
+            has_toplevel = all(m.startswith(toplevel + "/") for m in members if m.strip())
 
             if has_toplevel and toplevel:
                 for member in members:
@@ -563,9 +552,7 @@ def sample_dataset_selector():
                     st.session_state.sample_description = f.read()
             except Exception as e:
                 st.error(f"Ошибка чтения описания: {e}")
-        st.success(
-            f"Выбран: ****{selected_dataset}****. Смотрите данные в разделе ****Датасет****"
-        )
+        st.success(f"Выбран: ****{selected_dataset}****. Смотрите данные в разделе ****Датасет****")
         st.success("Нажмите 🔘&nbsp;&nbsp;****Запустить****")
 
 

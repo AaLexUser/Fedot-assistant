@@ -1,6 +1,7 @@
 import importlib
 import sys
 from types import SimpleNamespace
+from typing import Any, cast
 
 from omegaconf import OmegaConf
 
@@ -124,46 +125,33 @@ def test_get_feature_transformers_config_resolves_extra_body():
     extra_body = {"provider": {"quantizations": ["fp8", "fp16", "bf16", "fp32"]}}
     config.llm.extra_body = extra_body
 
-    [caafe_config] = configs_module.get_feature_transformers_config(config)
+    transformer_configs = configs_module.get_feature_transformers_config(config)
+    assert transformer_configs is not None
+    [caafe_config] = transformer_configs
 
     assert caafe_config["extra_body"] == extra_body
 
 
 def test_caafe_query_passes_extra_body(monkeypatch):
-    caafe_module = importlib.import_module(
-        "fedotllm.transformer.feature_transformers.caafe"
-    )
+    caafe_module = importlib.import_module("fedotllm.transformer.feature_transformers.caafe")
     calls = []
-    extra_body = OmegaConf.create(
-        {"provider": {"quantizations": ["fp8", "fp16", "bf16", "fp32"]}}
-    )
+    extra_body = OmegaConf.create({"provider": {"quantizations": ["fp8", "fp16", "bf16", "fp32"]}})
 
     def fake_completion(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(message=SimpleNamespace(content="```python\npass\n```"))
-            ]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="```python\npass\n```"))])
 
-    monkeypatch.setitem(
-        sys.modules, "litellm", SimpleNamespace(completion=fake_completion)
-    )
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=fake_completion))
 
-    client = SimpleNamespace(
-        completion_params={"model": "test-model", "max_completion_tokens": 123}
-    )
+    client = SimpleNamespace(completion_params={"model": "test-model", "max_completion_tokens": 123})
     messages = [{"role": "user", "content": "Hello"}]
 
     response = caafe_module._caafe_litellm_client.LiteLLMClient.query(
-        client,
+        cast(Any, client),
         messages,
         extra_body=extra_body,
         max_completion_tokens=456,
     )
-
     assert response == "```python\npass\n```"
-    assert calls[0]["extra_body"] == {
-        "provider": {"quantizations": ["fp8", "fp16", "bf16", "fp32"]}
-    }
+    assert calls[0]["extra_body"] == {"provider": {"quantizations": ["fp8", "fp16", "bf16", "fp32"]}}
     assert "max_completion_tokens" not in calls[0]

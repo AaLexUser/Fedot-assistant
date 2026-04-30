@@ -111,9 +111,7 @@ async def create_task(
     # Validate task directory
     task_dir = Path(request.task_dir)
     if not task_dir.exists():
-        raise HTTPException(
-            status_code=400, detail=f"Task directory not found: {request.task_dir}"
-        )
+        raise HTTPException(status_code=400, detail=f"Task directory not found: {request.task_dir}")
 
     # Initialize task
     tasks[task_id] = {

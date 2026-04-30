@@ -3,22 +3,20 @@ import os
 import re
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional, cast
 
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from ..runtime_paths import get_artifacts_dir
 
 
-def _get_default_config_path(
-    presets: str,
-) -> Path:
+def _get_default_config_path(presets: str) -> Path:
     """
     Get default config folder under packages root
     Returns Path to the config.yaml file
     """
     try:
-        config_path = files("fedotllm") / "configs" / f"{presets}.yaml"
+        config_path = Path(str(files("fedotllm") / "configs" / f"{presets}.yaml"))
 
         if not config_path.exists():
             raise ValueError(
@@ -35,7 +33,7 @@ def _get_default_config_path(
         return config_path
 
 
-def parse_override(override: str) -> tuple:
+def parse_override(override: str) -> tuple[str, str]:
     """
     Parse a single override string in the format 'key=value' or 'key.nested=value'
 
@@ -49,14 +47,12 @@ def parse_override(override: str) -> tuple:
         ValueError: If override string is not in correct format
     """
     if "=" not in override:
-        raise ValueError(
-            f"Invalid override format: {override}. Must be in format 'key=value' or 'key.nested=value'"
-        )
+        raise ValueError(f"Invalid override format: {override}. Must be in format 'key=value' or 'key.nested=value'")
     key, value = override.split("=", 1)
     return key, value
 
 
-def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, Any]:
+def apply_overrides(config: DictConfig, overrides: list[str]) -> DictConfig:
     """
     Apply command-line overrides to config
     Args:
@@ -69,12 +65,12 @@ def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, A
         return config
 
     # Convert overrides to nested dict
-    override_conf = {}
-    overrides = ",".join(overrides)
+    override_conf_data: dict[str, Any] = {}
+    overrides_text = ",".join(overrides)
     # Split by comma but preserve commas inside square brackets
-    overrides = re.split(r",(?![^\[]*\])", overrides)
+    override_items = re.split(r",(?![^\[]*\])", overrides_text)
 
-    for override in overrides:
+    for override in override_items:
         override = override.strip()
         key, value = parse_override(override)
 
@@ -93,22 +89,22 @@ def apply_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, A
                 pass
 
         # Handle nested keys
-        current = override_conf
+        current = override_conf_data
         key_parts = key.split(".")
         for part in key_parts[:-1]:
             current = current.setdefault(part, {})
         current[key_parts[-1]] = value
 
     # Convert override dict to OmegaConf and merge
-    override_conf = OmegaConf.create(override_conf)
-    return OmegaConf.merge(config, override_conf)
+    override_conf = OmegaConf.create(override_conf_data)
+    return cast(DictConfig, OmegaConf.merge(config, override_conf))
 
 
 def load_config(
     presets: str = "default",
     config_path: Optional[str] = None,
-    overrides: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    overrides: Optional[list[str]] = None,
+) -> DictConfig:
     """
     Load configuration from yaml file, merging with default config and applying overrides
 
@@ -127,13 +123,13 @@ def load_config(
     # Load default config
     default_config_path = _get_default_config_path(presets="default")
     logging.info(f"Loading default config from: {default_config_path}")
-    config = OmegaConf.load(default_config_path)
+    config = cast(DictConfig, OmegaConf.load(default_config_path))
 
     # Apply Presets
     presets_config_path = _get_default_config_path(presets=presets)
-    presets_config = OmegaConf.load(presets_config_path)
+    presets_config = cast(DictConfig, OmegaConf.load(presets_config_path))
     logging.info(f"Merging {presets} config from: {presets_config_path}")
-    config = OmegaConf.merge(config, presets_config)
+    config = cast(DictConfig, OmegaConf.merge(config, presets_config))
 
     # If custom config provided, merge it
     if config_path:
@@ -142,8 +138,8 @@ def load_config(
             raise ValueError(f"Custom config file not found at: {custom_config_path}")
 
         logging.info(f"Loading custom config from: {custom_config_path}")
-        custom_config = OmegaConf.load(custom_config_path)
-        config = OmegaConf.merge(config, custom_config)
+        custom_config = cast(DictConfig, OmegaConf.load(custom_config_path))
+        config = cast(DictConfig, OmegaConf.merge(config, custom_config))
         logging.info("Successfully merged custom config with default config")
 
     # Apply command-line overrides if any
@@ -156,8 +152,8 @@ def load_config(
 
 
 def get_feature_transformers_config(
-    config: OmegaConf,
-) -> Optional[List[Dict[str, Any]]]:
+    config: DictConfig,
+) -> Optional[list[dict[str, Any]]]:
     """
     Retrieve the configuration of feature transformers based on enabled models.
     Returns None if no models are enabled.
@@ -184,7 +180,7 @@ def get_feature_transformers_config(
     all_models_config = config.feature_transformers.models
 
     # Create list of configurations for enabled models
-    transformers_config = [
+    transformers_config: list[dict[str, Any]] = [
         unpack_omega_config(all_models_config[model_name])
         for model_name in enabled_models
         if model_name in all_models_config

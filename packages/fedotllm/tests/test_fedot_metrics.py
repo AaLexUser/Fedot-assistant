@@ -1,13 +1,16 @@
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import pytest
 from fedot.core.data.data import InputData, OutputData
+from fedot.core.pipelines.pipeline import Pipeline
 from fedot.core.repository.dataset_types import DataTypesEnum
 from fedot.core.repository.tasks import Task, TaskTypesEnum
 from fedotllm.constants import REGRESSION, ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR
 from fedotllm.predictor import fedot as fedot_module
+from fedotllm.task import PredictionTask
 from sklearn.metrics import mean_squared_log_error
 
 
@@ -44,13 +47,11 @@ def test_fedot_rmsle_metric_matches_sklearn():
     )
 
     metric_value = fedot_module.FEDOT_RMSLE_METRIC(
-        pipeline=_FakePipeline(predictions),
+        pipeline=cast(Pipeline, _FakePipeline(predictions)),
         reference_data=reference_data,
     )
 
-    expected = float(
-        np.sqrt(mean_squared_log_error(reference_data.target, predictions))
-    )
+    expected = float(np.sqrt(mean_squared_log_error(reference_data.target, predictions)))
     assert metric_value == pytest.approx(expected)
 
 
@@ -70,21 +71,18 @@ def test_fedot_tabular_predictor_passes_custom_rmsle_callable(monkeypatch):
     monkeypatch.setattr(fedot_module, "Fedot", FakeFedot)
     monkeypatch.setattr(fedot_module, "graph_structure", lambda pipeline: "fake-graph")
 
-    predictor = fedot_module.FedotTabularPredictor(
-        SimpleNamespace(predictor_init_kwargs={}, predictor_fit_kwargs={})
-    )
+    predictor = fedot_module.FedotTabularPredictor(SimpleNamespace(predictor_init_kwargs={}, predictor_fit_kwargs={}))
     train_data = pd.DataFrame(
         {
             "feature": [1.0, 2.0, 3.0],
             "target": [1.0, 4.0, 9.0],
         }
     )
-    task = SimpleNamespace(
-        eval_metric=ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR,
-        problem_type=REGRESSION,
-        train_data=train_data,
-        label_column="target",
-    )
+    task = PredictionTask(filepaths=[], metadata={"name": "regression-task"})
+    task.eval_metric = ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR
+    task.problem_type = REGRESSION
+    task.train_data = train_data
+    task.label_columns = ["target"]
 
     predictor.fit(task, time_limit=7)
 
@@ -96,7 +94,4 @@ def test_fedot_tabular_predictor_passes_custom_rmsle_callable(monkeypatch):
         train_data.drop(columns=["target"]),
     )
     pd.testing.assert_series_equal(captured["fit_target"], train_data["target"])
-    assert (
-        predictor.metadata["predictor_init_kwargs"]["metric"]
-        is fedot_module.FEDOT_RMSLE_METRIC
-    )
+    assert predictor.metadata["predictor_init_kwargs"]["target"]["metric"] is fedot_module.FEDOT_RMSLE_METRIC

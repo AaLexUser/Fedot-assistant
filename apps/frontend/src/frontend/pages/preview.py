@@ -70,9 +70,7 @@ def preview_dataset():
             """,
                 unsafe_allow_html=True,
             )
-            if st.session_state.output_filename and selected_file == os.path.basename(
-                st.session_state.output_filename
-            ):
+            if st.session_state.output_filename and selected_file == os.path.basename(st.session_state.output_filename):
                 output_file = st.session_state.output_file
                 gb = GridOptionsBuilder.from_dataframe(output_file)
                 gb.configure_pagination()
@@ -83,9 +81,7 @@ def preview_dataset():
                     enable_enterprise_modules=False,
                 )
             elif st.session_state.selected_dataset == "Загрузить свой":
-                gb = GridOptionsBuilder.from_dataframe(
-                    st.session_state.uploaded_files[selected_file]["df"]
-                )
+                gb = GridOptionsBuilder.from_dataframe(st.session_state.uploaded_files[selected_file]["df"])
                 gb.configure_pagination()
                 gridOptions = gb.build()
                 AgGrid(
@@ -94,9 +90,7 @@ def preview_dataset():
                     enable_enterprise_modules=False,
                 )
             elif st.session_state.selected_dataset == "Пример датасета":
-                gb = GridOptionsBuilder.from_dataframe(
-                    st.session_state.sample_files[selected_file]["df"]
-                )
+                gb = GridOptionsBuilder.from_dataframe(st.session_state.sample_files[selected_file]["df"])
                 gb.configure_pagination()
                 gridOptions = gb.build()
                 AgGrid(
