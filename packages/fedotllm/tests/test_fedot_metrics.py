@@ -94,4 +94,43 @@ def test_fedot_tabular_predictor_passes_custom_rmsle_callable(monkeypatch):
         train_data.drop(columns=["target"]),
     )
     pd.testing.assert_series_equal(captured["fit_target"], train_data["target"])
-    assert predictor.metadata["predictor_init_kwargs"]["target"]["metric"] is fedot_module.FEDOT_RMSLE_METRIC
+    assert (
+        predictor.metadata["predictor_init_kwargs"]["metric"]
+        is fedot_module.FEDOT_RMSLE_METRIC
+    )
+
+
+def test_fedot_tabular_predictor_passes_configured_cache_paths(monkeypatch):
+    captured = {}
+
+    class FakeFedot:
+        def __init__(self, **kwargs):
+            captured["init_kwargs"] = kwargs
+            self.current_pipeline = "fake-pipeline"
+
+        def fit(self, features, target, **kwargs):
+            captured["fit_kwargs"] = kwargs
+
+    monkeypatch.setattr(fedot_module, "Fedot", FakeFedot)
+    monkeypatch.setattr(fedot_module, "graph_structure", lambda pipeline: "fake-graph")
+
+    predictor = fedot_module.FedotTabularPredictor(
+        SimpleNamespace(
+            predictor_init_kwargs={
+                "cache_dir": "/var/essdata/cache",
+                "history_dir": "/var/essdata/history",
+            },
+            predictor_fit_kwargs={},
+        )
+    )
+    task = SimpleNamespace(
+        eval_metric=ROOT_MEAN_SQUARED_LOGARITHMIC_ERROR,
+        problem_type=REGRESSION,
+        train_data=pd.DataFrame({"feature": [1.0], "target": [1.0]}),
+        label_column="target",
+    )
+
+    predictor.fit(task, time_limit=7)
+
+    assert captured["init_kwargs"]["cache_dir"] == "/var/essdata/cache"
+    assert captured["init_kwargs"]["history_dir"] == "/var/essdata/history"

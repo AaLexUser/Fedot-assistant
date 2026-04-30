@@ -24,7 +24,11 @@ automl:
   fedot:
     predictor_init_kwargs:
       preset: best_quality
+      cv_folds: 10
+      # n_jobs: 1
       with_tuning: True
+      cache_dir: ${oc.env:FEDOTLLM_FEDOT_DIR}
+      history_dir: ${oc.env:FEDOTLLM_FEDOT_DIR}
     predictor_fit_kwargs: {}
   fedot_ind:
     predictor_init_kwargs:
