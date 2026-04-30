@@ -119,6 +119,20 @@ def test_default_config_shares_extra_body_with_caafe():
     assert config.feature_transformers.models.CAAFE.extra_body == extra_body
 
 
+def test_default_config_uses_shared_fedot_dir(monkeypatch):
+    monkeypatch.delenv("FEDOTLLM_FEDOT_DIR", raising=False)
+
+    runtime_paths = importlib.import_module("fedotllm.runtime_paths")
+    config = importlib.import_module("fedotllm.utils.configs").load_config()
+
+    assert config.automl.fedot.predictor_init_kwargs.cache_dir == str(
+        runtime_paths.get_fedot_dir()
+    )
+    assert config.automl.fedot.predictor_init_kwargs.history_dir == str(
+        runtime_paths.get_fedot_dir()
+    )
+
+
 def test_get_feature_transformers_config_resolves_extra_body():
     configs_module = importlib.import_module("fedotllm.utils.configs")
     config = configs_module.load_config()

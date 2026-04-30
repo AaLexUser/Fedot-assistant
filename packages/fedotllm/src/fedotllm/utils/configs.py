@@ -7,7 +7,7 @@ from typing import Any, Optional, cast
 
 from omegaconf import DictConfig, OmegaConf
 
-from ..runtime_paths import get_artifacts_dir
+from ..runtime_paths import get_artifacts_dir, get_fedot_dir
 
 
 def _get_default_config_path(presets: str) -> Path:
@@ -119,6 +119,7 @@ def load_config(
         ValueError: If config file not found or invalid
     """
     os.environ.setdefault("FEDOTLLM_ARTIFACTS_DIR", str(get_artifacts_dir()))
+    os.environ.setdefault("FEDOTLLM_FEDOT_DIR", str(get_fedot_dir()))
 
     # Load default config
     default_config_path = _get_default_config_path(presets="default")

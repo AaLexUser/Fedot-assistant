@@ -79,3 +79,5 @@ sample_dataset/
 user_data/
 data/
 .references/
+fedot-artifacts
+fedot-cache

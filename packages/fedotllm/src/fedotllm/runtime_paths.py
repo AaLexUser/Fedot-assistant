@@ -43,6 +43,11 @@ def get_artifacts_dir() -> Path:
     )
 
 
+def get_fedot_dir() -> Path:
+    """Base directory used by FEDOT caches and history."""
+    return _resolve_path("FEDOTLLM_FEDOT_DIR", Path(tempfile.gettempdir()) / "FEDOT")
+
+
 def get_llm_cache_dir() -> Path:
     """Persistent directory for cached LLM chat completions."""
     return _resolve_path("FEDOTLLM_LLM_CACHE_DIR", get_data_dir() / "llm_cache")
